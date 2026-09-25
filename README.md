@@ -17,11 +17,14 @@ Modern high-density warehouses suffer from traffic deadlocks, narrow aisle conge
 This project delivers a **Decentralized Edge-AI Multi-Agent Path Finding (MAPF) and Mission Control Engine** that coordinates autonomous mobile robot fleets across an **80 × 50 (4,000 cells) mega-warehouse** with **7,560 parcel slots** across 5 vertical 3D storage tiers.
 
 ### 🌟 Key Differentiators:
-1. **Dynamic Priority-Based Conflict Avoidance**: Resolves narrow single-lane aisle head-on conflicts via pocket yielding and right-of-way arbitration ($0$ collisions, $0$ deadlocks).
+1. **Decentralized Multi-Agent Coordination (Contract Net Protocol - CNP)**: Eliminates single-point-of-failure centralized dispatchers. Autonomous peer AMRs form an ad-hoc local RF mesh, broadcasting task RFPs and negotiating job allocation via local marginal cost bidding.
 2. **Autonomous Hardware Breakdown & Task Rescue Handoff (Self-Healing)**: When an AMR encounters a mechanical failure or battery depletion, a peer AMR autonomously navigates to its location, takes over the stranded cargo, and completes the mission.
 3. **Human Safety First (ISO-3691-4 Compliant)**: Dynamic LiDAR radar bubble detection that safety-brakes for human workers and computes dynamic A* detours around blocked corridors.
-4. **Cold-Chain & JIT Priority SLA**: Differentiates high-urgency cold-chain pharma totes (purple glowing aura ❄️) from standard retail goods with traffic preemption.
-5. **Interactive Evaluator Test Suite**: 6 one-click evaluation scenarios and manual chaos tools (drop humans, hazards, or faults) directly on the glassmorphic dashboard.
+4. **Direction-Aware Anti-Deadlock Aisle Retreat**: Detects head-on conflicts in single-lane aisles, compares dynamic priority scores, and directs lower-priority robots to retreat backwards away from the oncoming AMR to topological pockets (guaranteed 0 deadlocks, 0 collisions).
+5. **Cold-Chain & JIT Priority SLA**: Differentiates high-urgency cold-chain pharma totes (purple glowing aura ❄️) from standard retail goods with traffic preemption.
+6. **Fleet Power Switchboard**: Real-time management drawer allowing evaluators to selectively power ON/OFF individual AMRs or trigger master unstick routines.
+7. **Simulation Fidelity & 3D Slot Graphics**: Features 0.4s hydraulic mechanical lift/deposit animations with glow beams, and differentiates empty rack slots (recessed wireframe brackets `[ · ]`) from occupied 3D cargo crates.
+8. **Interactive Evaluator Test Suite**: 6 one-click evaluation scenarios and manual chaos tools (drop humans, hazards, or faults) directly on the glassmorphic dashboard.
 
 ---
 
@@ -116,7 +119,7 @@ Robots book space-time cells. When two agents contend for the same cell, the age
 ### 1. Installation
 Clone this repository and install dependencies:
 ```bash
-git clone https://github.com/your-team/amr-fleet-mission-control.git
+git clone https://github.com/edigasaivikas-143/amr-fleet-mission-control.git
 cd amr-fleet-mission-control
 pip install fastapi uvicorn pydantic
 ```
