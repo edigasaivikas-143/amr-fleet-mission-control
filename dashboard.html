@@ -960,11 +960,14 @@
       if (mapData.grid[x][y] === 1) return false;
       if (!options.ignoreDynamic && dynamicHazards.has(`${x},${y}`)) return false;
 
-      // Obstacles include faulted, charged-out, or powered-off AMRs
+      // Obstacles include faulted, charged-out, powered-off AMRs, or idle parked charging AMRs
       if (!options.ignoreDynamic) {
         for (const bot of AMR_FLEET) {
           if (options.ignoreBotId && bot.id === options.ignoreBotId) continue;
           if ((bot.isFaulted || bot.isPoweredOff || bot.isChargedOut) && bot.gridX === x && bot.gridY === y) {
+            return false;
+          }
+          if (bot.state === 'IDLE_CHARGING' && bot.gridX === x && bot.gridY === y) {
             return false;
           }
         }
@@ -973,16 +976,24 @@
     }
 
     function getAccessPointForRack(rx, ry, fromX, fromY) {
-      const dirs = [{ dx: 0, dy: -1 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }, { dx: 1, dy: 0 }];
+      // Storage shelves face the vertical aisles (dx = -1 or dx = +1).
+      // Prioritize horizontal access so AMRs park INSIDE the aisle facing the rack,
+      // keeping the main horizontal transit corridors (y=4, y=23..26, y=45) 100% unobstructed!
+      const dirs = [{ dx: -1, dy: 0 }, { dx: 1, dy: 0 }, { dx: 0, dy: -1 }, { dx: 0, dy: 1 }];
       let best = null, bestDist = Infinity;
       for (const d of dirs) {
         const ax = rx + d.dx, ay = ry + d.dy;
-        if (isCellWalkable(ax, ay)) {
-          const dist = Math.abs(ax - fromX) + Math.abs(ay - fromY);
-          if (dist < bestDist) { bestDist = dist; best = { x: ax, y: ay }; }
+        if (ax >= 1 && ax < mapData.width - 1 && ay >= 1 && ay < mapData.height - 1) {
+          if (mapData.grid[ax][ay] !== 1) {
+            const dist = (fromX !== undefined && fromY !== undefined) ? (Math.abs(ax - fromX) + Math.abs(ay - fromY)) : 0;
+            if (dist < bestDist) {
+              bestDist = dist;
+              best = { x: ax, y: ay };
+            }
+          }
         }
       }
-      return best;
+      return best || { x: rx, y: ry };
     }
 
     function findWalkableAdjacentCell(x, y, fromX, fromY) {
@@ -1056,6 +1067,28 @@
 
           const nIdx = ny * width + nx;
           let stepCost = 1.0;
+
+          // Multi-Lane Highway Directional Flow Rules (Prevents head-on traffic jams)
+          // Top Highway (y in [1..4]): Row 4 is Eastbound (->), Row 3 is Westbound (<-)
+          if (ny === 4 && gx < cx && cx > nx) {
+            stepCost += 1.8;
+          } else if (ny === 3 && gx > cx && cx < nx) {
+            stepCost += 1.8;
+          }
+
+          // Middle Highway (y in [23..26]): Rows 25-26 Eastbound (->), Rows 23-24 Westbound (<-)
+          if ((ny === 25 || ny === 26) && gx < cx && cx > nx) {
+            stepCost += 1.8;
+          } else if ((ny === 23 || ny === 24) && gx > cx && cx < nx) {
+            stepCost += 1.8;
+          }
+
+          // Bottom Highway (y in [45..48]): Row 45 Eastbound (->), Row 46 Westbound (<-)
+          if (ny === 45 && gx < cx && cx > nx) {
+            stepCost += 1.8;
+          } else if (ny === 46 && gx > cx && cx < nx) {
+            stepCost += 1.8;
+          }
 
           // High avoidance of human workers (safety envelope)
           for (const worker of humanWorkers) {
@@ -1184,55 +1217,14 @@
         const otherNext = (other.path && other.pathIndex < other.path.length) ? other.path[other.pathIndex] : null;
         const distToOther = Math.hypot(robot.x - other.x, robot.y - other.y);
 
-        // A. Hard Proximity Bubble Check (Continuous Distance & Convoy Buffer)
-        // If within 1.35 cells, check if advancing moves closer to other
-        if (distToOther < 1.35) {
-          const dxToOther = other.x - robot.x;
-          const dyToOther = other.y - robot.y;
-          const targetDx = nextCell.x - robot.x;
-          const targetDy = nextCell.y - robot.y;
-          const dot = dxToOther * targetDx + dyToOther * targetDy;
-
-          if (dot > 0.05) {
-            robot.targetDesc = `Safety Hold: Proximity to ${other.id}`;
-            kpiCollisionsPrevented++;
-            updateHudStats();
-            return false; // HOLD POSITION
-          }
-        }
-
-        // B. Target Cell Currently Occupied (Rear-End / Tail-gating Prevention)
-        const isTargetOccupied = Math.hypot(other.x - nextCell.x, other.y - nextCell.y) < 0.95;
+        // 1. Target Cell Currently Occupied (Immediate Collision Prevention)
+        const isTargetOccupied = Math.hypot(other.x - nextCell.x, other.y - nextCell.y) < 0.92;
         if (isTargetOccupied) {
           robot.targetDesc = `Hold: Waiting for ${other.id} to clear (${nextCell.x},${nextCell.y})`;
           return false; // HOLD POSITION
         }
 
-        // C. Converging / Intersection Conflict (Both robots targeting the SAME cell)
-        const isConverging = otherNext && (otherNext.x === nextCell.x && otherNext.y === nextCell.y);
-        if (isConverging) {
-          const distMe = Math.hypot(robot.x - nextCell.x, robot.y - nextCell.y);
-          const distOther = Math.hypot(other.x - nextCell.x, other.y - nextCell.y);
-
-          let iWin = false;
-          if (Math.abs(myScore - otherScore) > 0.1) {
-            iWin = myScore > otherScore;
-          } else if (Math.abs(distMe - distOther) > 0.1) {
-            iWin = distMe < distOther;
-          } else {
-            iWin = robot.id < other.id;
-          }
-
-          if (!iWin) {
-            robot.targetDesc = `Intersection Yield: Waiting for ${other.id} to cross (${nextCell.x},${nextCell.y})`;
-            kpiYieldConflictsResolved++;
-            kpiCollisionsPrevented++;
-            updateHudStats();
-            return false; // HOLD OUTSIDE INTERSECTION
-          }
-        }
-
-        // D. SINGLE-LANE AISLE HEAD-ON PREEMPTION (Columns in SINGLE_LANE_COLUMNS)
+        // 2. Single-Lane Narrow Aisle Head-On Preemption (Columns in SINGLE_LANE_COLUMNS)
         if (SINGLE_LANE_COLUMNS.has(robot.gridX) && other.gridX === robot.gridX) {
           const isMeHeadingSouth = nextCell.y > robot.gridY;
           const isOtherHeadingNorth = otherNext && otherNext.y < other.gridY;
@@ -1261,7 +1253,7 @@
                   updateHudStats();
                 }
               }
-              return true; // Let it advance backwards along retreatPath
+              return true; // Let it advance along retreatPath
             } else {
               // Higher-priority robot continues forward smoothly
               return true;
@@ -1269,13 +1261,62 @@
           }
         }
 
-        // E. Open Corridor Head-On / Swap Conflict
-        const isHeadOn = otherNext && (otherNext.x === robot.gridX && otherNext.y === robot.gridY) && (other.gridX === nextCell.x && other.gridY === nextCell.y);
+        // 3. Open Corridor Head-On / Opposing Traffic Check
+        const dxToOther = other.x - robot.x;
+        const dyToOther = other.y - robot.y;
+        const targetDx = nextCell.x - robot.x;
+        const targetDy = nextCell.y - robot.y;
+        const dot = dxToOther * targetDx + dyToOther * targetDy;
+
+        const otherTargetDx = otherNext ? otherNext.x - other.x : 0;
+        const otherTargetDy = otherNext ? otherNext.y - other.y : 0;
+        const otherDot = (-dxToOther) * otherTargetDx + (-dyToOther) * otherTargetDy;
+
+        const isHeadOn = (dot > 0.05 && otherDot > 0.05 && distToOther < 2.5);
         if (isHeadOn) {
-          if (myScore < otherScore || (myScore === otherScore && robot.id > other.id)) {
-            robot.targetDesc = `Yielding lane to ${other.id}`;
-            return false; // Hold until other clears
+          const iHaveRightOfWay = (myScore > otherScore) || (myScore === otherScore && robot.id < other.id);
+          if (!iHaveRightOfWay) {
+            robot.targetDesc = `Yielding lane to high-priority ${other.id}`;
+            kpiYieldConflictsResolved++;
+            kpiCollisionsPrevented++;
+            updateHudStats();
+            return false; // Lower priority holds until higher priority passes
+          } else {
+            // Higher priority robot proceeds without interruption!
+            return true;
           }
+        }
+
+        // 4. Converging / Intersection Conflict (Both robots targeting the SAME cell)
+        const isConverging = otherNext && (otherNext.x === nextCell.x && otherNext.y === nextCell.y);
+        if (isConverging) {
+          const distMe = Math.hypot(robot.x - nextCell.x, robot.y - nextCell.y);
+          const distOther = Math.hypot(other.x - nextCell.x, other.y - nextCell.y);
+
+          let iWin = false;
+          if (Math.abs(myScore - otherScore) > 0.1) {
+            iWin = myScore > otherScore;
+          } else if (Math.abs(distMe - distOther) > 0.1) {
+            iWin = distMe < distOther;
+          } else {
+            iWin = robot.id < other.id;
+          }
+
+          if (!iWin) {
+            robot.targetDesc = `Intersection Yield: Waiting for ${other.id} to cross (${nextCell.x},${nextCell.y})`;
+            kpiYieldConflictsResolved++;
+            kpiCollisionsPrevented++;
+            updateHudStats();
+            return false; // HOLD OUTSIDE INTERSECTION
+          }
+        }
+
+        // 5. Convoy Safe Following Distance (Trailing behind another robot moving in same direction)
+        if (distToOther < 1.35 && dot > 0.05) {
+          robot.targetDesc = `Convoy Buffer: Following ${other.id}`;
+          kpiCollisionsPrevented++;
+          updateHudStats();
+          return false; // HOLD POSITION to maintain convoy headway
         }
       }
 
@@ -1833,17 +1874,20 @@
           continue;
         }
 
-        // Deadlock Watchdog: Detect robots that have clearance to move but are physically blocked for > 3.5s
-        if (robot.path && robot.path.length > 0 && robot.state !== 'IDLE_CHARGING' && robot.state !== 'HUMAN_SAFETY_STOP') {
-          const moveDist = Math.hypot(robot.x - (robot.lastX || robot.x), robot.y - (robot.lastY || robot.y));
-          if (moveDist < 0.04) {
-            robot.stuckDuration = (robot.stuckDuration || 0) + dt;
-            if (robot.stuckDuration > 3.5) {
+        // Deadlock Watchdog: Detect robots that have clearance to move but make zero net progress for > 4.5s
+        robot.progressCheckTimer = (robot.progressCheckTimer || 0) + dt;
+        if (robot.progressCheckTimer >= 1.0) {
+          robot.progressCheckTimer = 0;
+          const netDist = Math.hypot(robot.x - (robot.lastCheckX !== undefined ? robot.lastCheckX : robot.x), robot.y - (robot.lastCheckY !== undefined ? robot.lastCheckY : robot.y));
+          robot.lastCheckX = robot.x;
+          robot.lastCheckY = robot.y;
+          if (netDist < 0.2 && robot.path && robot.path.length > 0 && robot.state !== 'IDLE_CHARGING' && robot.state !== 'HUMAN_SAFETY_STOP') {
+            robot.stuckDuration = (robot.stuckDuration || 0) + 1.0;
+            if (robot.stuckDuration > 4.5) {
               unstickRobot(robot);
+              robot.stuckDuration = 0;
             }
           } else {
-            robot.lastX = robot.x;
-            robot.lastY = robot.y;
             robot.stuckDuration = 0;
           }
         }
