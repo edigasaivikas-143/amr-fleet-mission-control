@@ -1229,11 +1229,59 @@
 
       // 2. Multi-Agent Intersection, Follow, & Head-On Checks
       for (const other of AMR_FLEET) {
-        if (other.id === robot.id || other.isPoweredOff || other.state === 'IDLE_CHARGING') continue;
+        if (other.id === robot.id || other.state === 'IDLE_CHARGING') continue;
 
         const otherScore = getRobotPriority(other);
         const otherNext = (other.path && other.pathIndex < other.path.length) ? other.path[other.pathIndex] : null;
         const distToOther = Math.hypot(robot.x - other.x, robot.y - other.y);
+
+        // A. Handle Blockage by Immobilized / Depleted / Faulted / Powered-Off AMRs
+        if (other.isFaulted || other.isChargedOut || other.isPoweredOff) {
+          // If this robot is the surrogate AMR arriving to rescue this exact dead bot, allow rendezvous!
+          if (robot.state === 'RESCUING' && robot.rescueTarget && robot.rescueTarget.id === other.id) {
+            if (distToOther <= 1.45) {
+              completeRescueHandoff(robot);
+            }
+            return true; // Clear to approach for rescue handoff
+          }
+
+          // If this robot is NOT the rescue surrogate, but its next cell or proximity is blocked by the dead robot:
+          const isBlockedByDeadBot = (nextCell && Math.hypot(other.x - nextCell.x, other.y - nextCell.y) < 0.95) || distToOther < 1.35;
+          if (isBlockedByDeadBot) {
+            // Disabled robot will NEVER move. The active robot must reverse out of narrow aisle immediately!
+            if (SINGLE_LANE_COLUMNS.has(robot.gridX)) {
+              if (robot.state !== 'YIELDING_POCKET') {
+                const isOtherAhead = other.gridY > robot.gridY;
+                const retreatY = isOtherAhead ? (robot.gridY <= 23 ? 4 : 25) : (robot.gridY <= 23 ? 24 : 46);
+                const retreatPath = findAStarPath(robot.gridX, robot.gridY, robot.gridX, retreatY, { ignoreDynamic: true });
+                if (retreatPath.length > 0) {
+                  robot.path = retreatPath;
+                  robot.pathIndex = 0;
+                  robot.state = 'YIELDING_POCKET';
+                  robot.targetDesc = `Reversing: aisle blocked by disabled ${other.id}`;
+                  logConflict(`🛑 Aisle Blockage: <strong>${robot.id}</strong> reversing out of aisle ${robot.gridX} blocked by disabled <strong>${other.id}</strong>`);
+                  kpiYieldConflictsResolved++;
+                  updateHudStats();
+                  return true;
+                }
+              }
+              return false;
+            } else {
+              // Open area: compute detour around dead bot
+              const goal = robot.path[robot.path.length - 1];
+              if (goal) {
+                const detour = findAStarPath(robot.gridX, robot.gridY, goal.x, goal.y);
+                if (detour.length > 0) {
+                  robot.path = detour;
+                  robot.pathIndex = 0;
+                  return true;
+                }
+              }
+              return false;
+            }
+          }
+          continue; // Not blocked by this dead bot
+        }
 
         // 1. Head-On / Opposing Traffic Encounter Check (Highest Precedence)
         const dxToOther = other.x - robot.x;
@@ -1741,6 +1789,8 @@
       let bestBid = Infinity;
       for (const bot of AMR_FLEET) {
         if (bot.isFaulted || bot.isPoweredOff || bot.isChargedOut || bot.battery < 30 || bot.id === deadBot.id) continue;
+        if (deadBot.cargo && bot.cargo) continue; // Surrogate MUST have an empty deck to receive dead bot's cargo!
+        if (bot.state === 'RESCUING') continue;
         const d = Math.abs(bot.gridX - deadBot.gridX) + Math.abs(bot.gridY - deadBot.gridY);
         const bid = d + (100 - bot.battery) * 0.3;
         if (bid < bestBid) { bestBid = bid; surrogate = bot; }
