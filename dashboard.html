@@ -1154,7 +1154,14 @@
       const bids = [];
 
       for (const bot of AMR_FLEET) {
-        if (bot.isFaulted || bot.isPoweredOff || bot.battery < 20) continue;
+        if (bot.isFaulted || bot.isPoweredOff || bot.isChargedOut) continue;
+        // Low battery guard: Robots <= 25% must recharge at home bay, not take new tasks
+        if (bot.battery <= 25) continue;
+        // If charging at station, stay until replenished to at least 85%
+        if (bot.state === 'IDLE_CHARGING' && bot.battery < 85) continue;
+        // If returning home with low battery, do not divert
+        if (bot.state === 'RETURNING_HOME' && bot.battery <= 40) continue;
+        // Only idle, sufficiently-charged docking, or returning-home robots can bid
         if (bot.state !== 'IDLE' && bot.state !== 'IDLE_CHARGING' && bot.state !== 'RETURNING_HOME') continue;
 
         // Marginal cost function computed on the edge agent:
@@ -1361,6 +1368,17 @@
         // 2. Target Cell Currently Occupied (Immediate Collision Prevention)
         const isTargetOccupied = Math.hypot(other.x - nextCell.x, other.y - nextCell.y) < 0.92;
         if (isTargetOccupied) {
+          if (other.state === 'IDLE' && (!other.path || other.path.length === 0)) {
+            // Idle AMR steps aside into adjacent cell to grant right-of-way to active delivery AMR
+            const sideStep = findWalkableAdjacentCell(other.gridX, other.gridY, robot.gridX, robot.gridY);
+            if (sideStep && (sideStep.x !== other.gridX || sideStep.y !== other.gridY)) {
+              other.gridX = sideStep.x;
+              other.gridY = sideStep.y;
+              other.x = sideStep.x;
+              other.y = sideStep.y;
+              other.targetDesc = `Yielded space for ${robot.id}`;
+            }
+          }
           robot.targetDesc = `Hold: Waiting for ${other.id} to clear (${nextCell.x},${nextCell.y})`;
           return false; // HOLD POSITION
         }
@@ -1599,17 +1617,22 @@
       }
 
       for (const robot of AMR_FLEET) {
-        if (robot.isFaulted || robot.isPoweredOff) continue;
+        if (robot.isFaulted || robot.isPoweredOff || robot.isChargedOut) continue;
         if (robot.state === 'IDLE') {
-          if (robot.gridX === robot.homeX && robot.gridY === robot.homeY) {
-            robot.state = 'IDLE_CHARGING';
-            robot.targetDesc = 'Parked at Fast Charger (100%)';
-            robot.path = [];
-          } else {
+          if (robot.battery <= 25) {
+            // Low battery: Send home to recharge
             robot.state = 'RETURNING_HOME';
-            robot.targetDesc = `Returning to Charger ${robot.homeBayId}`;
+            robot.targetDesc = `Low Battery (${Math.round(robot.battery)}%): Returning to Charger`;
             robot.path = findAStarPath(robot.gridX, robot.gridY, robot.homeX, robot.homeY);
             robot.pathIndex = 0;
+            logTerminal('BATTERY', 'tag-yield', `🔋 <strong>${robot.id}</strong> low battery (${Math.round(robot.battery)}%). Routing to ${robot.homeBayId} to recharge.`);
+          } else if (robot.gridX === robot.homeX && robot.gridY === robot.homeY) {
+            robot.state = 'IDLE_CHARGING';
+            robot.targetDesc = `Parked at Fast Charger (${Math.round(robot.battery)}%)`;
+            robot.path = [];
+          } else {
+            // Healthy battery (> 25%): Stay in standby in the field ready for immediate task assignment!
+            robot.targetDesc = 'Standby (Awaiting Tasks)';
           }
         }
       }
@@ -1670,8 +1693,17 @@
           logTerminal('SHELVING', 'tag-complete', `📥 <strong>${robot.id}</strong> stored <strong>${task.parcel.parcel_id}</strong> at Rack (${task.rackSlot.rack.x}, ${task.rackSlot.rack.y}) Tier ${task.rackSlot.floorNum}`);
           robot.cargo = null;
           robot.currentTask = null;
-          robot.state = 'IDLE';
-          dispatchFleet();
+          if (robot.battery <= 25) {
+            robot.state = 'RETURNING_HOME';
+            robot.targetDesc = `Low Battery (${Math.round(robot.battery)}%): Returning to Charger`;
+            robot.path = findAStarPath(robot.gridX, robot.gridY, robot.homeX, robot.homeY);
+            robot.pathIndex = 0;
+            logTerminal('BATTERY', 'tag-yield', `🔋 <strong>${robot.id}</strong> stored parcel. Low battery (${Math.round(robot.battery)}%), returning to ${robot.homeBayId} to recharge.`);
+          } else {
+            robot.state = 'IDLE';
+            robot.targetDesc = 'Standby (Awaiting Tasks)';
+            dispatchFleet();
+          }
           render();
         }, 400);
 
@@ -1715,12 +1747,25 @@
         }
         robot.cargo = null;
         robot.currentTask = null;
-        robot.state = 'IDLE';
-        dispatchFleet();
+        if (robot.battery <= 25) {
+          robot.state = 'RETURNING_HOME';
+          robot.targetDesc = `Low Battery (${Math.round(robot.battery)}%): Returning to Charger`;
+          robot.path = findAStarPath(robot.gridX, robot.gridY, robot.homeX, robot.homeY);
+          robot.pathIndex = 0;
+          logTerminal('BATTERY', 'tag-yield', `🔋 <strong>${robot.id}</strong> completed outbound order. Low battery (${Math.round(robot.battery)}%), returning to ${robot.homeBayId} to recharge.`);
+        } else {
+          robot.state = 'IDLE';
+          robot.targetDesc = 'Standby (Awaiting Tasks)';
+          dispatchFleet();
+        }
       } else if (robot.state === 'RETURNING_HOME') {
         robot.state = 'IDLE_CHARGING';
-        robot.targetDesc = 'Parked at Fast Charger (100%)';
+        robot.targetDesc = `Docked at Fast Charger ${robot.homeBayId} (${Math.round(robot.battery)}%)`;
         robot.path = [];
+        robot.pathIndex = 0;
+        logTerminal('BATTERY', 'tag-complete', `⚡ <strong>${robot.id}</strong> docked at charging bay <strong>${robot.homeBayId}</strong>. Fast charging active.`);
+        updateFleetPowerCards();
+        dispatchFleet();
       } else if (robot.state === 'RESCUING') {
         completeRescueHandoff(robot);
       } else if (robot.state === 'YIELDING_POCKET') {
@@ -1884,21 +1929,40 @@
 
         // Battery logic
         if (robot.state === 'IDLE_CHARGING') {
-          robot.battery = Math.min(100, robot.battery + dt * 15 * simSpeed);
+          robot.battery = Math.min(100, robot.battery + dt * 20 * simSpeed);
           if (robot.battery >= 99) {
             robot.isChargedOut = false;
+            robot.targetDesc = `Fully Charged (100%) - Ready`;
+          } else {
+            robot.targetDesc = `Fast Charging (${Math.round(robot.battery)}%)`;
           }
         } else if (!robot.isChargedOut && !robot.isFaulted) {
-          robot.battery = Math.max(0, robot.battery - dt * 0.35 * simSpeed);
-          if (robot.battery <= 5.0) {
-            triggerChargedOut(robot);
-            continue;
-          } else if (robot.battery <= 20 && robot.state === 'IDLE') {
+          // Realistic battery consumption
+          robot.battery = Math.max(5, robot.battery - dt * 0.08 * simSpeed);
+
+          // Autonomous low-battery safeguard: If robot has no cargo and hits <= 20%, route home immediately
+          if (robot.battery <= 20 && !robot.cargo && robot.state !== 'RETURNING_HOME') {
             robot.state = 'RETURNING_HOME';
-            robot.targetDesc = 'Low Battery (20%): Returning to Charger';
+            robot.targetDesc = `Low Battery (${Math.round(robot.battery)}%): Returning to Charger`;
             robot.path = findAStarPath(robot.gridX, robot.gridY, robot.homeX, robot.homeY);
             robot.pathIndex = 0;
+            logTerminal('BATTERY', 'tag-yield', `🔋 <strong>${robot.id}</strong> low battery safeguard (${Math.round(robot.battery)}%). Routing to ${robot.homeBayId}.`);
           }
+        }
+
+        // Idle fleet park check: if an AMR has been idle for > 18s with no active warehouse tasks, return home
+        if (robot.state === 'IDLE') {
+          robot.idleTimer = (robot.idleTimer || 0) + dt;
+          if (robot.idleTimer > 18 && inboundTasks.length === 0 && outboundTasks.length === 0) {
+            robot.idleTimer = 0;
+            robot.state = 'RETURNING_HOME';
+            robot.targetDesc = `All tasks complete: Returning to ${robot.homeBayId}`;
+            robot.path = findAStarPath(robot.gridX, robot.gridY, robot.homeX, robot.homeY);
+            robot.pathIndex = 0;
+            logTerminal('FLEET', 'tag-system', `🏠 <strong>${robot.id}</strong> warehouse idle. Returning to home station ${robot.homeBayId}.`);
+          }
+        } else {
+          robot.idleTimer = 0;
         }
 
         if (robot.isFaulted || robot.isChargedOut) continue;
@@ -2255,6 +2319,9 @@
       } else if (r.state === 'IDLE_CHARGING') {
         ringColor = '#22c55e';
         glowColor = 'rgba(34, 197, 94, 0.7)';
+      } else if (r.state === 'RETURNING_HOME') {
+        ringColor = '#10b981';
+        glowColor = 'rgba(16, 185, 129, 0.7)';
       } else if (r.state === 'HUMAN_SAFETY_STOP') {
         ringColor = '#fbbf24';
         glowColor = 'rgba(251, 191, 36, 0.8)';
@@ -2311,6 +2378,16 @@
         ctx.font = `bold ${Math.max(9, radius * 0.95)}px monospace`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText('⚠️', 0, 0);
+      } else if (r.state === 'IDLE_CHARGING') {
+        ctx.fillStyle = '#22c55e';
+        ctx.font = `bold ${Math.max(9, radius * 0.95)}px monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('⚡', 0, 0);
+      } else if (r.state === 'RETURNING_HOME') {
+        ctx.fillStyle = '#10b981';
+        ctx.font = `bold ${Math.max(8, radius * 0.85)}px monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('🏠', 0, 0);
       } else if (r.state === 'LIFTING_CARGO' || r.state === 'DEPOSITING_CARGO') {
         ctx.fillStyle = '#facc15';
         ctx.font = `bold ${Math.max(8, radius * 0.75)}px monospace`;
