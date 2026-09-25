@@ -1,0 +1,2110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Edge-AI AMR Fleet Mission Control | Distributed Coordination</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --panel: #111827;
+      --panel-trans: rgba(17, 24, 39, 0.88);
+      --border: #1f293d;
+      --border-accent: rgba(56, 189, 248, 0.35);
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --pickup: #06b6d4;
+      --dropoff: #f59e0b;
+      --charging: #22c55e;
+      --hazard: #ef4444;
+      --human: #fbbf24;
+      --pharma: #a855f7;
+      --rack: #151821;
+      --rack-border: #282d37;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; }
+    body { background: var(--bg); color: var(--text); overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+
+    /* Top Navigation Bar */
+    header {
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 20;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-logo { font-size: 20px; filter: drop-shadow(0 0 8px #38bdf8); }
+    .brand-title { font-weight: 700; font-size: 15px; letter-spacing: 0.5px; }
+    .brand-sub { font-size: 11px; color: var(--text-muted); font-weight: 500; }
+    .badge {
+      font-size: 10px;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      padding: 2px 8px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .badge-sih {
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(239, 68, 68, 0.2));
+      color: #fbbf24;
+      border: 1px solid rgba(251, 191, 36, 0.5);
+    }
+
+    .top-actions { display: flex; align-items: center; gap: 10px; }
+    .btn {
+      background: #1e293b;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+      user-select: none;
+    }
+    .btn:hover { background: #334155; border-color: var(--accent); color: #fff; }
+    .btn-primary { background: rgba(56, 189, 248, 0.2); border-color: var(--accent); color: var(--accent); }
+    .btn-primary:hover { background: var(--accent); color: #000; box-shadow: 0 0 12px rgba(56, 189, 248, 0.5); }
+    .btn-danger { background: rgba(239, 68, 68, 0.2); border-color: #ef4444; color: #ef4444; }
+    .btn-danger:hover { background: #ef4444; color: #fff; box-shadow: 0 0 10px rgba(239, 68, 68, 0.5); }
+    .btn.active { background: var(--accent); color: #090d16; font-weight: 700; box-shadow: 0 0 10px var(--accent); }
+
+    /* Scenarios Sub-Bar */
+    .scenarios-bar {
+      background: #0d1322;
+      border-bottom: 1px solid var(--border);
+      padding: 6px 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+      z-index: 15;
+    }
+    .scenarios-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      font-weight: 800;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+    }
+    .scenario-btn {
+      background: #151f32;
+      border: 1px solid #243048;
+      color: #cbd5e1;
+      border-radius: 5px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .scenario-btn:hover { background: #1e2d4a; border-color: var(--accent); color: #fff; transform: translateY(-1px); }
+    .scenario-btn.active {
+      background: rgba(56, 189, 248, 0.25);
+      border-color: var(--accent);
+      color: #38bdf8;
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+    }
+
+    /* Workspace Canvas Area */
+    .workspace { flex: 1; position: relative; overflow: hidden; display: flex; }
+    canvas { width: 100%; height: 100%; display: block; cursor: grab; background: #070a10; }
+    canvas:active { cursor: grabbing; }
+
+    /* Interactive Tools Floating Palette */
+    .tools-palette {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      background: var(--panel-trans);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      z-index: 10;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+    }
+    .tool-btn {
+      background: #1a2234;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      width: 38px;
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+    .tool-btn:hover { background: #28354f; color: var(--accent); border-color: var(--accent); }
+    .tool-btn.active {
+      background: rgba(56, 189, 248, 0.25);
+      color: var(--accent);
+      border-color: var(--accent);
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+    }
+    .tool-btn .tooltip-text {
+      visibility: hidden;
+      position: absolute;
+      left: 48px;
+      background: #111827;
+      color: #fff;
+      font-size: 11px;
+      white-space: nowrap;
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+      z-index: 30;
+      pointer-events: none;
+    }
+    .tool-btn:hover .tooltip-text { visibility: visible; }
+
+    /* Real-Time Metrics & Conflict HUD */
+    .hud-metrics {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: var(--panel-trans);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      min-width: 290px;
+      z-index: 10;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+      transition: all 0.2s;
+    }
+    .hud-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 6px;
+    }
+    .hud-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+      font-size: 11px;
+    }
+    .hud-lbl { color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
+    .hud-val { font-weight: 700; color: #fff; font-family: monospace; font-size: 12px; }
+    .hud-val.good { color: #22c55e; }
+    .hud-val.warn { color: #f59e0b; }
+    .hud-val.alert { color: #ef4444; }
+
+    /* Active Conflict Negotiation Card */
+    .conflict-card {
+      margin-top: 8px;
+      padding: 8px;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      border-radius: 6px;
+      font-size: 10px;
+    }
+    .conflict-header {
+      font-weight: 700;
+      color: #38bdf8;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      text-transform: uppercase;
+      font-size: 10px;
+    }
+    .conflict-msg { color: #cbd5e1; line-height: 1.4; }
+
+    /* Zoom / Camera Controls */
+    .cam-controls {
+      position: absolute;
+      bottom: 24px;
+      right: 24px;
+      background: var(--panel-trans);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      z-index: 10;
+    }
+    .cam-btn {
+      background: #1e293b;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      width: 34px;
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .cam-btn:hover { background: #334155; border-color: var(--accent); color: #fff; }
+
+    /* Legend */
+    .legend {
+      position: absolute;
+      bottom: 24px;
+      left: 16px;
+      background: var(--panel-trans);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      z-index: 10;
+    }
+    .legend-item { display: flex; align-items: center; gap: 5px; color: var(--text-muted); font-size: 10px; }
+    .legend-box { width: 10px; height: 10px; border-radius: 2px; }
+
+    /* Terminal Console */
+    .terminal-panel {
+      position: absolute;
+      bottom: 24px;
+      right: 70px;
+      width: 520px;
+      max-width: calc(100vw - 380px);
+      height: 195px;
+      background: rgba(10, 14, 23, 0.95);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      z-index: 10;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+      transition: height 0.2s ease-in-out;
+    }
+    .terminal-panel.collapsed { height: 34px; }
+    .term-header {
+      background: #111827;
+      border-bottom: 1px solid var(--border);
+      padding: 6px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      user-select: none;
+    }
+    .term-title { display: flex; align-items: center; gap: 6px; color: var(--text-muted); }
+    .term-actions { display: flex; align-items: center; gap: 6px; }
+    .term-btn {
+      background: #1e293b;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .term-btn:hover { background: #334155; color: #fff; }
+    .term-body {
+      flex: 1;
+      padding: 8px 12px;
+      overflow-y: auto;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 10.5px;
+      line-height: 1.5;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .terminal-panel.collapsed .term-body { display: none; }
+    .term-line { display: flex; gap: 8px; word-break: break-all; }
+    .term-time { color: #64748b; font-size: 9.5px; min-width: 58px; }
+    .term-tag {
+      font-size: 9px;
+      font-weight: 800;
+      padding: 0 4px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+    }
+    .tag-safety { background: rgba(239, 68, 68, 0.25); color: #f87171; border: 1px solid #ef4444; }
+    .tag-yield { background: rgba(245, 158, 11, 0.25); color: #fbbf24; border: 1px solid #f59e0b; }
+    .tag-rescue { background: rgba(168, 85, 247, 0.25); color: #c084fc; border: 1px solid #a855f7; }
+    .tag-inbound { background: rgba(6, 182, 212, 0.2); color: #22d3ee; border: 1px solid #06b6d4; }
+    .tag-outbound { background: rgba(249, 115, 22, 0.2); color: #fb923c; border: 1px solid #f97316; }
+    .tag-complete { background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid #22c55e; }
+    .tag-system { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid #64748b; }
+
+    /* Tooltip */
+    #tooltip {
+      position: absolute;
+      display: none;
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 11px;
+      pointer-events: none;
+      z-index: 50;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.8);
+      max-width: 320px;
+    }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(6px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-box {
+      background: #111827;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      width: 440px;
+      max-width: 90vw;
+      padding: 20px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.8);
+    }
+    .modal-title { font-size: 15px; font-weight: 700; margin-bottom: 12px; color: #fff; }
+    .preset-btn {
+      background: #1e293b;
+      border: 1px solid var(--border);
+      color: #cbd5e1;
+      border-radius: 5px;
+      padding: 6px 12px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .preset-btn:hover { background: #334155; border-color: var(--accent); color: #fff; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header>
+    <div class="brand">
+      <span class="brand-logo">🤖</span>
+      <div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="brand-title">Edge AMR Fleet Mission Control</span>
+          <span class="badge badge-sih">SIH 2026 EDITION</span>
+          <span class="badge" id="engine-badge">AI MAPF ENGINE: ACTIVE</span>
+        </div>
+        <div class="brand-sub">Distributed Multi-Agent Path Finding & Self-Healing Fault Recovery</div>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <!-- Engine Mode Toggle -->
+      <button class="btn btn-primary" id="mode-toggle-btn" onclick="toggleEngineMode()">
+        <span id="mode-icon">⚡</span> <span id="mode-label">Mode: Edge-AI MAPF</span>
+      </button>
+
+      <!-- Speed Control -->
+      <button class="btn" id="speed-btn" onclick="cycleSpeed()">
+        ⏩ <span id="speed-label">1x Speed</span>
+      </button>
+
+      <!-- Bulk Ingestion -->
+      <button class="btn" onclick="openBulkModal()">
+        📦 Add Parcels
+      </button>
+
+      <!-- Reset Simulation -->
+      <button class="btn btn-danger" onclick="resetFleetSimulation()">
+        🔄 Reset
+      </button>
+    </div>
+  </header>
+
+  <!-- SIH Interactive Scenarios Sub-Bar -->
+  <div class="scenarios-bar">
+    <div class="scenarios-label">
+      <span>🎯 SIH Scenarios:</span>
+    </div>
+    <button class="scenario-btn active" id="scen-0" onclick="triggerScenario(0)">
+      <span>🔄 Normal Ops</span>
+    </button>
+    <button class="scenario-btn" id="scen-1" onclick="triggerScenario(1)">
+      <span>🔀 1. Narrow Aisle Priority Yield</span>
+    </button>
+    <button class="scenario-btn" id="scen-2" onclick="triggerScenario(2)">
+      <span>👷 2. Human Safety Brake & Detour</span>
+    </button>
+    <button class="scenario-btn" id="scen-3" onclick="triggerScenario(3)">
+      <span>💥 3. Actuator Fault & Auto Task Rescue</span>
+    </button>
+    <button class="scenario-btn" id="scen-4" onclick="triggerScenario(4)">
+      <span>⚡ 4. Low-Battery Limp & Charging</span>
+    </button>
+    <button class="scenario-btn" id="scen-5" onclick="triggerScenario(5)">
+      <span>🚀 5. Rush-Hour Peak Surge (40 PKGs)</span>
+    </button>
+  </div>
+
+  <!-- Main Canvas Workspace -->
+  <div class="workspace">
+    <canvas id="warehouse-canvas"></canvas>
+
+    <!-- Interactive Tools Palette (Left Side) -->
+    <div class="tools-palette">
+      <button class="tool-btn active" id="tool-inspect" onclick="setTool('inspect')">
+        🔍
+        <span class="tooltip-text">Inspect (Hover / Click AMR or Racks)</span>
+      </button>
+      <button class="tool-btn" id="tool-human" onclick="setTool('human')">
+        👷
+        <span class="tooltip-text">Click floor to Drop / Remove Human Worker</span>
+      </button>
+      <button class="tool-btn" id="tool-hazard" onclick="setTool('hazard')">
+        🚧
+        <span class="tooltip-text">Click aisle to Drop / Remove Spilled Hazard</span>
+      </button>
+      <button class="tool-btn" id="tool-breakdown" onclick="setTool('breakdown')">
+        💥
+        <span class="tooltip-text">Click any AMR to Trigger Hardware Failure</span>
+      </button>
+      <button class="tool-btn" id="tool-drain" onclick="setTool('drain')">
+        ⚡
+        <span class="tooltip-text">Click any AMR to Drain Battery to 5%</span>
+      </button>
+      <button class="tool-btn" id="tool-repair" onclick="setTool('repair')">
+        🔧
+        <span class="tooltip-text">Click Faulted AMR to Repair & Bring Online</span>
+      </button>
+      <button class="tool-btn" onclick="clearDynamicHazards()">
+        🧹
+        <span class="tooltip-text">Clear All Hazards & Workers</span>
+      </button>
+    </div>
+
+    <!-- Real-Time Metrics & Conflict HUD (Top Right) -->
+    <div class="hud-metrics">
+      <div class="hud-title">
+        <span>⚡ Fleet Intelligence KPIs</span>
+        <span style="color:#22c55e; font-size:10px;">● ISO-3691-4</span>
+      </div>
+
+      <div class="hud-row">
+        <span class="hud-lbl">🛡️ Collisions Prevented:</span>
+        <span class="hud-val good" id="kpi-collisions">0 Collisions</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-lbl">🔀 Yield Conflicts Resolved:</span>
+        <span class="hud-val" id="kpi-yields" style="color:#38bdf8;">0</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-lbl">👷 Human Safety Interlocks:</span>
+        <span class="hud-val warn" id="kpi-safety-stops">0</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-lbl">🔄 Self-Healing Task Rescues:</span>
+        <span class="hud-val" id="kpi-rescues" style="color:#c084fc;">0</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-lbl">📦 3D Rack Storage:</span>
+        <span class="hud-val" id="kpi-occupancy">0 / 7,560 (0.0%)</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-lbl">🤖 Active AMR Fleet:</span>
+        <span class="hud-val" id="kpi-fleet-health">8 / 8 Healthy</span>
+      </div>
+
+      <!-- Live Conflict Resolution Feed -->
+      <div class="conflict-card" id="conflict-card">
+        <div class="conflict-header">
+          <span>📡 Priority Arbiter Status</span>
+        </div>
+        <div class="conflict-msg" id="conflict-msg">
+          Floor clear. All 8 AMRs coordinating via decentralized space-time reservations.
+        </div>
+      </div>
+    </div>
+
+    <!-- Legend (Bottom Left) -->
+    <div class="legend">
+      <div class="legend-item"><div class="legend-box" style="background:#06b6d4;"></div>Inbound Dock (P)</div>
+      <div class="legend-item"><div class="legend-box" style="background:#f59e0b;"></div>Outbound Bay (D)</div>
+      <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Fast Charger (CH)</div>
+      <div class="legend-item"><div class="legend-box" style="background:#a855f7;"></div>Urgent Cold-Chain</div>
+      <div class="legend-item"><div class="legend-box" style="background:#ef4444;"></div>Hazard / Faulted AMR</div>
+      <div class="legend-item"><div class="legend-box" style="background:#fbbf24;"></div>Human Worker</div>
+    </div>
+
+    <!-- Terminal Console & Mission Logs (Bottom Right) -->
+    <div class="terminal-panel" id="terminal-panel">
+      <div class="term-header" onclick="toggleTerminal()">
+        <div class="term-title">
+          <span>📟 Mission Control Event Stream</span>
+          <span style="color:#64748b; font-size:10px;">(Decentralized ROS2 / Edge Telemetry)</span>
+        </div>
+        <div class="term-actions" onclick="event.stopPropagation()">
+          <button class="term-btn" onclick="clearTerminal()">Clear</button>
+          <button class="term-btn" id="term-toggle-btn" onclick="toggleTerminal()">_</button>
+        </div>
+      </div>
+      <div class="term-body" id="term-body"></div>
+    </div>
+
+    <!-- Camera Navigation Controls -->
+    <div class="cam-controls">
+      <button class="cam-btn" onclick="zoom(1.2)" title="Zoom In">+</button>
+      <button class="cam-btn" onclick="zoom(0.8)" title="Zoom Out">-</button>
+      <button class="cam-btn" onclick="resetView()" title="Fit Floor">⛶</button>
+    </div>
+
+    <!-- Tooltip -->
+    <div id="tooltip"></div>
+  </div>
+
+  <!-- Bulk Parcels Modal -->
+  <div class="modal-overlay" id="bulk-modal" onclick="closeBulkModal(event)">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <div class="modal-title">📦 Bulk Ingestion & Rack Stress Test</div>
+      <p style="font-size:12px; color:#94a3b8; margin-bottom:14px;">
+        Rapidly allocate parcels into 3D multi-tier racks categorized by SKU bands.
+      </p>
+      <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
+        <button class="preset-btn" onclick="setPresetN(10)">+10 Parcels</button>
+        <button class="preset-btn" onclick="setPresetN(50)">+50 Parcels</button>
+        <button class="preset-btn" onclick="setPresetN(200)">+200 Parcels</button>
+        <button class="preset-btn" onclick="setPresetN(1000)">+1,000 Parcels</button>
+        <button class="preset-btn" onclick="fillCapacity(0.5)">50% Capacity</button>
+        <button class="preset-btn" onclick="fillCapacity(1.0)">100% Full (7,560)</button>
+      </div>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <input type="number" id="bulk-input" value="50" min="1" max="7560" style="background:#1f293d; border:1px solid #334155; color:#fff; padding:6px 10px; border-radius:5px; width:120px; font-weight:700;">
+        <button class="btn btn-primary" onclick="submitBulkIngest()">Inject into 3D Racks</button>
+        <button class="btn" onclick="closeBulkModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript Fleet Simulation & Edge-AI Coordination Engine -->
+  <script>
+    // -------------------------------------------------------------
+    // Core Data Structures & Constants
+    // -------------------------------------------------------------
+    const SKU_CATALOG = [
+      { sku: 'SKU-ELEC', name: 'Consumer Electronics', weight: 4.5, priority: 'HIGH', score: 60, color: '#38bdf8' },
+      { sku: 'SKU-AUTO', name: 'Automotive Components', weight: 14.2, priority: 'HIGH', score: 60, color: '#60a5fa' },
+      { sku: 'SKU-PHRM', name: 'Cold-Chain Pharma Tote', weight: 3.8, priority: 'URGENT', score: 120, color: '#a855f7' },
+      { sku: 'SKU-FASH', name: 'Apparel & Footwear Box', weight: 2.2, priority: 'NORMAL', score: 20, color: '#ec4899' },
+      { sku: 'SKU-INDM', name: 'Industrial Hardware Crate', weight: 21.0, priority: 'NORMAL', score: 20, color: '#f59e0b' },
+      { sku: 'SKU-FMCG', name: 'Retail Packaged Goods', weight: 7.6, priority: 'NORMAL', score: 20, color: '#10b981' }
+    ];
+
+    const MAX_FLOORS = 5;
+    const AMR_COUNT = 8;
+    const ROBOT_BASE_SPEED = 4.2; // Grid cells/sec at 1x
+
+    let mapData = null;
+    let rackMemory = {};
+    const AMR_FLEET = [];
+    const inboundQueues = {};
+    const outboundOrders = {};
+    const inboundTasks = [];
+    const outboundTasks = [];
+    const dynamicHazards = new Set(); // Set of "x,y" strings
+    const humanWorkers = []; // Array of { id, name, x, y, dir, safetyRadius: 1.8 }
+
+    let parcelSequence = 1000;
+    let orderSequence = 2000;
+    let currentTool = 'inspect';
+    let isAiMode = true; // true: Edge-AI MAPF Priority Mode | false: Naive BFS
+    let currentScenarioId = 0;
+    let simSpeed = 1;
+    const SPEED_PRESETS = [1, 2, 5, 10];
+
+    // KPIs
+    let kpiCollisionsPrevented = 0;
+    let kpiYieldConflictsResolved = 0;
+    let kpiSafetyStops = 0;
+    let kpiSelfHealingRescues = 0;
+
+    // Canvas & Camera
+    const canvas = document.getElementById('warehouse-canvas');
+    const ctx = canvas.getContext('2d');
+    const camera = { x: 0, y: 0, scale: 20 };
+    let isDragging = false;
+    let dragStart = { x: 0, y: 0 };
+    const tooltip = document.getElementById('tooltip');
+
+    // -------------------------------------------------------------
+    // Initialization: Map, Racks, Fleet
+    // -------------------------------------------------------------
+    function createFallbackMap() {
+      // 80x50 industrial warehouse layout fallback
+      const width = 80, height = 50;
+      const grid = Array.from({ length: width }, () => Array(height).fill(0));
+
+      // Perimeter walls
+      for (let x = 0; x < width; x++) { grid[x][0] = 1; grid[x][height - 1] = 1; }
+      for (let y = 0; y < height; y++) { grid[0][y] = 1; grid[width - 1][y] = 1; }
+
+      // Solid rack pods
+      const colPairs = [
+        [5,6],[8,9],[11,12],[14,15],[17,18],[20,21],[23,24],
+        [30,31],[33,34],[36,37],[39,40],[42,43],[45,46],[48,49],
+        [56,57],[59,60],[62,63],[65,66],[68,69],[71,72],[74,75]
+      ];
+      for (const [c1, c2] of colPairs) {
+        for (let x = c1; x <= c2; x++) {
+          for (let y = 5; y <= 22; y++) grid[x][y] = 1;
+          for (let y = 27; y <= 44; y++) grid[x][y] = 1;
+        }
+      }
+
+      const stations = {};
+      // Top & Bottom Chargers
+      [38, 39, 40, 41].forEach((cx, i) => {
+        stations[`CH-0${i+1}`] = { id: `CH-0${i+1}`, name: `Top Fast Charger ${i+1}`, type: 'charging', x: cx, y: 1, zone: 'Top Center' };
+        stations[`CH-0${i+5}`] = { id: `CH-0${i+5}`, name: `Bottom Fast Charger ${i+1}`, type: 'charging', x: cx, y: 48, zone: 'Bottom Center' };
+      });
+
+      // Left Side Docks (P-01 to P-05) and Bays (D-01 to D-05)
+      [5, 9, 13, 17, 21].forEach((sy, i) => {
+        stations[`P-0${i+1}`] = { id: `P-0${i+1}`, name: `West Inbound Dock ${i+1}`, type: 'pickup', x: 1, y: sy, zone: 'West-North' };
+      });
+      [27, 31, 35, 39, 43].forEach((sy, i) => {
+        stations[`D-0${i+1}`] = { id: `D-0${i+1}`, name: `West Sort Bay ${i+1}`, type: 'dropoff', x: 1, y: sy, zone: 'West-South' };
+      });
+
+      // Right Side Bays (D-06 to D-10) and Docks (P-06 to P-10)
+      [5, 9, 13, 17, 21].forEach((sy, i) => {
+        const id = i < 4 ? `D-0${i+6}` : 'D-10';
+        stations[id] = { id, name: `East Sort Bay ${i+1}`, type: 'dropoff', x: 78, y: sy, zone: 'East-North' };
+      });
+      [27, 31, 35, 39, 43].forEach((sy, i) => {
+        const id = i < 4 ? `P-0${i+6}` : 'P-10';
+        stations[id] = { id, name: `East Inbound Dock ${i+1}`, type: 'pickup', x: 78, y: sy, zone: 'East-South' };
+      });
+
+      return { width, height, grid, stations };
+    }
+
+    function initRackMemory() {
+      rackMemory = {};
+      if (!mapData || !mapData.grid) return;
+      for (let x = 1; x < mapData.width - 1; x++) {
+        for (let y = 1; y < mapData.height - 1; y++) {
+          if (mapData.grid[x][y] === 1) {
+            let idx = 0;
+            if (5 <= y && y <= 22) idx = Math.floor((y - 5) / 3);
+            else if (27 <= y && y <= 44) idx = Math.floor((y - 27) / 3);
+            idx = Math.max(0, Math.min(SKU_CATALOG.length - 1, idx));
+            const cat = SKU_CATALOG[idx];
+
+            rackMemory[`${x},${y}`] = {
+              x, y,
+              categorySku: cat.sku,
+              categoryName: cat.name,
+              categoryColor: cat.color,
+              floors: Array(MAX_FLOORS).fill(null)
+            };
+          }
+        }
+      }
+
+      // Initialize station queues
+      for (const sid of Object.keys(mapData.stations)) {
+        if (sid.startsWith('P')) inboundQueues[sid] = [];
+        if (sid.startsWith('D')) outboundOrders[sid] = null;
+      }
+    }
+
+    function initAmrFleet() {
+      AMR_FLEET.length = 0;
+      const chargingBays = [
+        { id: "CH-01", x: 38, y: 1, zone: "Top Center" },
+        { id: "CH-02", x: 39, y: 1, zone: "Top Center" },
+        { id: "CH-03", x: 40, y: 1, zone: "Top Center" },
+        { id: "CH-04", x: 41, y: 1, zone: "Top Center" },
+        { id: "CH-05", x: 38, y: 48, zone: "Bottom Center" },
+        { id: "CH-06", x: 39, y: 48, zone: "Bottom Center" },
+        { id: "CH-07", x: 40, y: 48, zone: "Bottom Center" },
+        { id: "CH-08", x: 41, y: 48, zone: "Bottom Center" }
+      ];
+
+      for (let i = 0; i < AMR_COUNT; i++) {
+        const bay = chargingBays[i];
+        AMR_FLEET.push({
+          id: `AMR-0${i + 1}`,
+          num: i + 1,
+          homeBayId: bay.id,
+          homeBayZone: bay.zone,
+          homeX: bay.x,
+          homeY: bay.y,
+          x: bay.x,
+          y: bay.y,
+          gridX: bay.x,
+          gridY: bay.y,
+          heading: i < 4 ? Math.PI / 2 : -Math.PI / 2,
+          state: 'IDLE_CHARGING', // 'IDLE_CHARGING', 'MOVING_TO_PICKUP', 'CARRYING_TO_RACK', 'MOVING_TO_RETRIEVE', 'CARRYING_TO_BAY', 'RETURNING_HOME', 'HUMAN_SAFETY_STOP', 'YIELDING_POCKET', 'FAULT_STOPPED', 'RESCUING'
+          battery: 100.0,
+          cargo: null,
+          currentTask: null,
+          path: [],
+          pathIndex: 0,
+          targetDesc: 'Parked at Fast Charger (100%)',
+          isFaulted: false,
+          faultReason: '',
+          isYielding: false,
+          yieldTimer: 0,
+          safetyStopTimer: 0,
+          rescueTarget: null
+        });
+      }
+      updateHudStats();
+    }
+
+    // -------------------------------------------------------------
+    // Pathfinding & Space-Time Collision Avoidance
+    // -------------------------------------------------------------
+    function isCellWalkable(x, y, ignoreDynamic = false) {
+      if (!mapData) return false;
+      if (x < 0 || x >= mapData.width || y < 0 || y >= mapData.height) return false;
+      if (mapData.grid[x][y] === 1) return false; // Static rack / wall
+      if (!ignoreDynamic && dynamicHazards.has(`${x},${y}`)) return false; // Debris / spill
+
+      // Faulted robots act as physical obstacles
+      if (!ignoreDynamic) {
+        for (const bot of AMR_FLEET) {
+          if (bot.isFaulted && bot.gridX === x && bot.gridY === y) return false;
+        }
+      }
+      return true;
+    }
+
+    function getAccessPointForRack(rx, ry, fromX, fromY) {
+      const dirs = [{ dx: 0, dy: -1 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }, { dx: 1, dy: 0 }];
+      let best = null, bestDist = Infinity;
+      for (const d of dirs) {
+        const ax = rx + d.dx, ay = ry + d.dy;
+        if (isCellWalkable(ax, ay)) {
+          const dist = Math.abs(ax - fromX) + Math.abs(ay - fromY);
+          if (dist < bestDist) { bestDist = dist; best = { x: ax, y: ay }; }
+        }
+      }
+      return best;
+    }
+
+    // A* Pathfinding with Dynamic Cost Penalties
+    function findAStarPath(sx, sy, gx, gy, options = {}) {
+      if (sx === gx && sy === gy) return [];
+      if (!isCellWalkable(gx, gy, options.ignoreDynamic)) {
+        const access = getAccessPointForRack(gx, gy, sx, sy);
+        if (!access) return [];
+        gx = access.x; gy = access.y;
+        if (sx === gx && sy === gy) return [];
+      }
+
+      const width = mapData.width, height = mapData.height;
+      const total = width * height;
+      const openSet = new Set();
+      const cameFrom = new Int32Array(total).fill(-1);
+      const gScore = new Float32Array(total).fill(Infinity);
+      const fScore = new Float32Array(total).fill(Infinity);
+
+      const startIdx = sy * width + sx;
+      const goalIdx = gy * width + gx;
+
+      gScore[startIdx] = 0;
+      fScore[startIdx] = Math.abs(sx - gx) + Math.abs(sy - gy);
+      openSet.add(startIdx);
+
+      const dirs = [{ dx: 0, dy: -1 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }, { dx: 1, dy: 0 }];
+
+      while (openSet.size > 0) {
+        let currentIdx = -1, lowestF = Infinity;
+        for (const idx of openSet) {
+          if (fScore[idx] < lowestF) { lowestF = fScore[idx]; currentIdx = idx; }
+        }
+
+        if (currentIdx === goalIdx) {
+          // Reconstruct path
+          const path = [];
+          let curr = goalIdx;
+          while (curr !== startIdx) {
+            path.push({ x: curr % width, y: Math.floor(curr / width) });
+            curr = cameFrom[curr];
+          }
+          path.reverse();
+          return path;
+        }
+
+        openSet.delete(currentIdx);
+        const cx = currentIdx % width;
+        const cy = Math.floor(currentIdx / width);
+
+        for (let i = 0; i < 4; i++) {
+          const nx = cx + dirs[i].dx;
+          const ny = cy + dirs[i].dy;
+
+          if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+          if (!isCellWalkable(nx, ny, options.ignoreDynamic)) continue;
+
+          const nIdx = ny * width + nx;
+          let stepCost = 1.0;
+
+          // Penalty for cells near human workers (Safety Buffer)
+          for (const worker of humanWorkers) {
+            const dist = Math.hypot(nx - worker.x, ny - worker.y);
+            if (dist <= 1.5) stepCost += 15.0; // High aversion to walking right by humans
+          }
+
+          const tentativeG = gScore[currentIdx] + stepCost;
+          if (tentativeG < gScore[nIdx]) {
+            cameFrom[nIdx] = currentIdx;
+            gScore[nIdx] = tentativeG;
+            fScore[nIdx] = tentativeG + (Math.abs(nx - gx) + Math.abs(ny - gy));
+            openSet.add(nIdx);
+          }
+        }
+      }
+      return [];
+    }
+
+    // -------------------------------------------------------------
+    // Priority Evaluation & Conflict Arbitration
+    // -------------------------------------------------------------
+    function getRobotPriority(robot) {
+      if (!robot) return 0;
+      let score = 10;
+      if (robot.cargo) {
+        if (robot.cargo.priority === 'URGENT' || robot.cargo.sku === 'SKU-PHRM') score += 120; // Cold-Chain pharma SLA
+        else if (robot.cargo.priority === 'HIGH') score += 60;
+        else score += 35;
+      } else if (robot.state === 'RESCUING') {
+        score += 150; // Emergency rescue AMR
+      } else if (robot.state === 'MOVING_TO_PICKUP' || robot.state === 'MOVING_TO_RETRIEVE') {
+        score += 25;
+      }
+      if (robot.battery < 18) score += 90; // Critical battery charging priority
+
+      // Tie breaker by robot number
+      score += (10 - robot.num) * 0.1;
+      return score;
+    }
+
+    function findNearestYieldPocket(robot) {
+      // Find open cell nearby, preferring middle cross-aisle (y=23..26) or transition aisle (y=4, y=45)
+      const x = robot.gridX, y = robot.gridY;
+      const candidates = [
+        { x, y: 24 }, { x, y: 25 }, { x, y: 4 }, { x, y: 45 },
+        { x: x - 1, y }, { x: x + 1, y }, { x, y: y - 1 }, { x, y: y + 1 }
+      ];
+      for (const pt of candidates) {
+        if (isCellWalkable(pt.x, pt.y)) return pt;
+      }
+      return null;
+    }
+
+    // Check Multi-Agent Traffic & Human Interlocks
+    function arbitrateTraffic(robot) {
+      if (!isAiMode) return; // In Naive mode, skip intelligent conflict resolution
+      if (robot.isFaulted || robot.state === 'IDLE_CHARGING') return;
+
+      // 1. Human Worker Safety Interlock (Absolute Priority)
+      for (const worker of humanWorkers) {
+        const dist = Math.hypot(robot.x - worker.x, robot.y - worker.y);
+        if (dist <= 2.2) {
+          // Engaged safety braking
+          robot.state = 'HUMAN_SAFETY_STOP';
+          robot.targetDesc = `🛑 Safety Interlock: Human Worker (${worker.name})`;
+          robot.safetyStopTimer += 0.05;
+          kpiSafetyStops++;
+          updateHudStats();
+
+          logConflict(`🛑 Safety Stop: <strong>${robot.id}</strong> halted for human <strong>${worker.name}</strong> at (${worker.x}, ${worker.y})`);
+
+          // If worker stays blocked > 1.8 seconds, dynamically calculate detour
+          if (robot.safetyStopTimer > 1.8 && robot.path.length > 0) {
+            const goal = robot.path[robot.path.length - 1];
+            const detour = findAStarPath(robot.gridX, robot.gridY, goal.x, goal.y);
+            if (detour.length > 0) {
+              robot.path = detour;
+              robot.pathIndex = 0;
+              robot.state = robot.cargo ? 'CARRYING_TO_BAY' : 'MOVING_TO_PICKUP';
+              robot.safetyStopTimer = 0;
+              logTerminal('SAFETY', 'tag-safety', `🔄 <strong>${robot.id}</strong> computed dynamic A* detour around human worker.`);
+            }
+          }
+          return;
+        }
+      }
+
+      // If previously stopped for human and path is now clear:
+      if (robot.state === 'HUMAN_SAFETY_STOP') {
+        robot.state = robot.cargo ? 'CARRYING_TO_BAY' : 'MOVING_TO_PICKUP';
+        robot.safetyStopTimer = 0;
+      }
+
+      // 2. AMR vs AMR Conflict Detection (Head-On in Narrow Aisles & Crossings)
+      if (!robot.path || robot.pathIndex >= robot.path.length) return;
+      const nextCell = robot.path[robot.pathIndex];
+
+      for (const other of AMR_FLEET) {
+        if (other.id === robot.id || other.isFaulted) continue;
+
+        // Check if other robot occupies next cell or is moving directly into our cell (Head-On)
+        const isHeadOn = (other.gridX === nextCell.x && other.gridY === nextCell.y);
+        const isApproaching = other.path && other.pathIndex < other.path.length &&
+                              (other.path[other.pathIndex].x === robot.gridX && other.path[other.pathIndex].y === robot.gridY);
+
+        if (isHeadOn || isApproaching) {
+          const myScore = getRobotPriority(robot);
+          const otherScore = getRobotPriority(other);
+
+          if (myScore < otherScore) {
+            // WE YIELD TO HIGHER PRIORITY AMR!
+            kpiYieldConflictsResolved++;
+            kpiCollisionsPrevented++;
+            updateHudStats();
+
+            robot.isYielding = true;
+            robot.state = 'YIELDING_POCKET';
+            robot.targetDesc = `Yielding to ${other.id} [Priority: ${Math.round(otherScore)} vs ${Math.round(myScore)}]`;
+
+            logConflict(`🔀 Priority Yield: <strong>${robot.id}</strong> (${Math.round(myScore)}) yields right-of-way to <strong>${other.id}</strong> (${Math.round(otherScore)})`);
+            logTerminal('PRIORITY', 'tag-yield', `🛑 <strong>${robot.id}</strong> stepped aside into pocket to let high-priority <strong>${other.id}</strong> pass.`);
+
+            // Maneuver into yield pocket or pause 1.5s
+            const pocket = findNearestYieldPocket(robot);
+            if (pocket) {
+              robot.path = [pocket];
+              robot.pathIndex = 0;
+            }
+            return;
+          }
+        }
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Task Dispatcher & Autonomous Handoff (Self-Healing)
+    // -------------------------------------------------------------
+    function getClosestFreeRobot(tx, ty) {
+      let best = null, bestDist = Infinity;
+      for (const bot of AMR_FLEET) {
+        if (bot.isFaulted || bot.battery < 20) continue;
+        if (bot.state === 'IDLE' || bot.state === 'IDLE_CHARGING' || bot.state === 'RETURNING_HOME') {
+          const dist = Math.abs(bot.gridX - tx) + Math.abs(bot.gridY - ty);
+          if (dist < bestDist) { bestDist = dist; best = bot; }
+        }
+      }
+      return best;
+    }
+
+    function dispatchFleet() {
+      // 1. Inbound & Outbound Assignment
+      while (inboundTasks.length > 0 || outboundTasks.length > 0) {
+        let task = null, tx = 0, ty = 0;
+        if (inboundTasks.length > 0 && (outboundTasks.length === 0 || Math.random() > 0.5)) {
+          task = inboundTasks[0]; tx = task.dockX; ty = task.dockY;
+        } else if (outboundTasks.length > 0) {
+          task = outboundTasks[0];
+          const access = getAccessPointForRack(task.rack.x, task.rack.y, 40, 25);
+          tx = access ? access.x : task.rack.x;
+          ty = access ? access.y : task.rack.y;
+        } else {
+          task = inboundTasks[0]; tx = task.dockX; ty = task.dockY;
+        }
+
+        const robot = getClosestFreeRobot(tx, ty);
+        if (!robot) break;
+
+        if (task.type === 'INBOUND') {
+          inboundTasks.shift();
+          robot.currentTask = task;
+          robot.state = 'MOVING_TO_PICKUP';
+          robot.targetDesc = `Dock ${task.dockId} (Pickup)`;
+          robot.path = findAStarPath(robot.gridX, robot.gridY, task.dockX, task.dockY);
+          robot.pathIndex = 0;
+        } else if (task.type === 'OUTBOUND') {
+          outboundTasks.shift();
+          robot.currentTask = task;
+          robot.state = 'MOVING_TO_RETRIEVE';
+          robot.targetDesc = `Rack (${task.rack.x},${task.rack.y}) L${task.floorNum}`;
+          const access = getAccessPointForRack(task.rack.x, task.rack.y, robot.gridX, robot.gridY);
+          if (access) {
+            robot.path = findAStarPath(robot.gridX, robot.gridY, access.x, access.y);
+            robot.pathIndex = 0;
+          }
+        }
+      }
+
+      // 2. Idle Robots Return to Home Fast-Charger
+      for (const robot of AMR_FLEET) {
+        if (robot.isFaulted) continue;
+        if (robot.state === 'IDLE') {
+          if (robot.gridX === robot.homeX && robot.gridY === robot.homeY) {
+            robot.state = 'IDLE_CHARGING';
+            robot.targetDesc = 'Parked at Fast Charger (100%)';
+            robot.path = [];
+          } else {
+            robot.state = 'RETURNING_HOME';
+            robot.targetDesc = `Returning to Charger ${robot.homeBayId}`;
+            robot.path = findAStarPath(robot.gridX, robot.gridY, robot.homeX, robot.homeY);
+            robot.pathIndex = 0;
+          }
+        }
+      }
+      updateHudStats();
+    }
+
+    function onRobotReachedDestination(robot) {
+      if (robot.isFaulted) return;
+
+      if (robot.state === 'MOVING_TO_PICKUP') {
+        const task = robot.currentTask;
+        if (!task) { robot.state = 'IDLE'; dispatchFleet(); return; }
+
+        const q = inboundQueues[task.dockId];
+        if (q) {
+          const idx = q.findIndex(p => p.parcel_id === task.parcel.parcel_id);
+          if (idx !== -1) q.splice(idx, 1);
+        }
+
+        robot.cargo = task.parcel;
+        robot.state = 'CARRYING_TO_RACK';
+        robot.targetDesc = `Shelving at Rack (${task.rackSlot.rack.x},${task.rackSlot.rack.y}) L${task.rackSlot.floorNum}`;
+
+        logTerminal('PICKUP', 'tag-inbound', `🤖 <strong>${robot.id}</strong> loaded <strong>${task.parcel.parcel_id}</strong> [${task.parcel.priority}] from ${task.dockId}. Transporting to 3D Rack.`);
+
+        const access = getAccessPointForRack(task.rackSlot.rack.x, task.rackSlot.rack.y, robot.gridX, robot.gridY);
+        if (access) {
+          robot.path = findAStarPath(robot.gridX, robot.gridY, access.x, access.y);
+          robot.pathIndex = 0;
+        } else {
+          robot.state = 'IDLE'; dispatchFleet();
+        }
+      } else if (robot.state === 'CARRYING_TO_RACK') {
+        const task = robot.currentTask;
+        if (task && task.rackSlot) {
+          task.rackSlot.rack.floors[task.rackSlot.floorIndex] = task.parcel;
+          logTerminal('SHELVING', 'tag-complete', `📥 <strong>${robot.id}</strong> placed <strong>${task.parcel.parcel_id}</strong> at Rack (${task.rackSlot.rack.x}, ${task.rackSlot.rack.y}) Tier ${task.rackSlot.floorNum}`);
+        }
+        robot.cargo = null;
+        robot.currentTask = null;
+        robot.state = 'IDLE';
+        dispatchFleet();
+      } else if (robot.state === 'MOVING_TO_RETRIEVE') {
+        const task = robot.currentTask;
+        if (!task) { robot.state = 'IDLE'; dispatchFleet(); return; }
+
+        task.rack.floors[task.floorIndex] = null;
+        robot.cargo = task.parcel;
+        robot.state = 'CARRYING_TO_BAY';
+        robot.targetDesc = `Delivering to Bay ${task.bayId}`;
+
+        logTerminal('RETRIEVE', 'tag-outbound', `🤖 <strong>${robot.id}</strong> retrieved <strong>${task.parcel.parcel_id}</strong>. Carrying to ${task.bayId}`);
+
+        robot.path = findAStarPath(robot.gridX, robot.gridY, task.bayX, task.bayY);
+        robot.pathIndex = 0;
+      } else if (robot.state === 'CARRYING_TO_BAY') {
+        const task = robot.currentTask;
+        if (task) {
+          const ord = outboundOrders[task.bayId];
+          if (ord) {
+            ord.deliveredCount = (ord.deliveredCount || 0) + 1;
+            if (ord.deliveredCount >= ord.totalCount) {
+              outboundOrders[task.bayId] = null;
+              logTerminal('DISPATCH', 'tag-complete', `✅ <strong>${task.bayId}</strong> order complete! Bay returned to Ready.`);
+            }
+          }
+        }
+        robot.cargo = null;
+        robot.currentTask = null;
+        robot.state = 'IDLE';
+        dispatchFleet();
+      } else if (robot.state === 'RETURNING_HOME') {
+        robot.state = 'IDLE_CHARGING';
+        robot.targetDesc = 'Parked at Fast Charger (100%)';
+        robot.path = [];
+      } else if (robot.state === 'RESCUING') {
+        // Physical cargo handoff from faulted robot to surrogate AMR
+        completeRescueHandoff(robot);
+      } else if (robot.state === 'YIELDING_POCKET') {
+        // Resume original task path once conflict has cleared
+        setTimeout(() => {
+          if (robot.currentTask) {
+            robot.state = robot.cargo ? 'CARRYING_TO_BAY' : 'MOVING_TO_PICKUP';
+            const goal = robot.cargo ? { x: robot.currentTask.bayX, y: robot.currentTask.bayY } : { x: robot.currentTask.dockX, y: robot.currentTask.dockY };
+            if (goal.x !== undefined) {
+              robot.path = findAStarPath(robot.gridX, robot.gridY, goal.x, goal.y);
+              robot.pathIndex = 0;
+            }
+          } else {
+            robot.state = 'IDLE'; dispatchFleet();
+          }
+        }, 1200);
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Self-Healing Fleet: Hardware Failure & Task Rescue Handoff
+    // -------------------------------------------------------------
+    function triggerRobotBreakdown(robotId, reason = 'Actuator Drive Lock') {
+      const robot = AMR_FLEET.find(r => r.id === robotId);
+      if (!robot || robot.isFaulted) return;
+
+      robot.isFaulted = true;
+      robot.faultReason = reason;
+      robot.state = 'FAULT_STOPPED';
+      robot.targetDesc = `⚠️ CRITICAL FAULT: ${reason}`;
+      robot.path = [];
+
+      logTerminal('FAULT', 'tag-safety', `🚨 <strong>${robot.id}</strong> CRITICAL FAILURE: ${reason} at (${robot.gridX}, ${robot.gridY}). Actuator halted.`);
+
+      // Autonomous Task Rescue Handoff
+      if (robot.cargo || robot.currentTask) {
+        initiateTaskRescueHandoff(robot);
+      }
+      updateHudStats();
+    }
+
+    function initiateTaskRescueHandoff(faultedBot) {
+      logTerminal('RESCUE', 'tag-rescue', `🔄 <strong>AUTONOMOUS FLEET RESCUE:</strong> Dispatching surrogate AMR to take over ${faultedBot.id}'s mission.`);
+
+      // Find closest healthy available robot
+      let surrogate = getClosestFreeRobot(faultedBot.gridX, faultedBot.gridY);
+      if (!surrogate) {
+        // Preempt lowest priority active robot
+        surrogate = AMR_FLEET.filter(r => !r.isFaulted && r.id !== faultedBot.id)[0];
+      }
+
+      if (surrogate) {
+        surrogate.state = 'RESCUING';
+        surrogate.rescueTarget = faultedBot;
+        surrogate.targetDesc = `Rescue Task: Rendezvous with ${faultedBot.id}`;
+
+        // Navigate to adjacent cell of faulted bot
+        const access = getAccessPointForRack(faultedBot.gridX, faultedBot.gridY, surrogate.gridX, surrogate.gridY) || { x: faultedBot.gridX + 1, y: faultedBot.gridY };
+        surrogate.path = findAStarPath(surrogate.gridX, surrogate.gridY, access.x, access.y, { ignoreDynamic: true });
+        surrogate.pathIndex = 0;
+
+        logTerminal('RESCUE', 'tag-rescue', `🤖 <strong>${surrogate.id}</strong> accepted rescue protocol for <strong>${faultedBot.id}</strong>. Navigating to rendezvous point.`);
+        kpiSelfHealingRescues++;
+        updateHudStats();
+      }
+    }
+
+    function completeRescueHandoff(surrogate) {
+      const faultedBot = surrogate.rescueTarget;
+      if (!faultedBot) { surrogate.state = 'IDLE'; dispatchFleet(); return; }
+
+      // Transfer cargo
+      if (faultedBot.cargo) {
+        surrogate.cargo = faultedBot.cargo;
+        surrogate.currentTask = faultedBot.currentTask;
+        faultedBot.cargo = null;
+
+        logTerminal('RESCUE', 'tag-complete', `🤝 Cargo transfer complete! <strong>${surrogate.id}</strong> took over parcel <strong>${surrogate.cargo.parcel_id}</strong> from disabled ${faultedBot.id}. Resuming delivery.`);
+
+        surrogate.state = 'CARRYING_TO_BAY';
+        surrogate.targetDesc = `Delivering Rescued Parcel to ${surrogate.currentTask.bayId}`;
+        surrogate.path = findAStarPath(surrogate.gridX, surrogate.gridY, surrogate.currentTask.bayX, surrogate.currentTask.bayY);
+        surrogate.pathIndex = 0;
+      } else {
+        surrogate.state = 'IDLE';
+        dispatchFleet();
+      }
+      surrogate.rescueTarget = null;
+    }
+
+    function repairRobot(robotId) {
+      const robot = AMR_FLEET.find(r => r.id === robotId);
+      if (!robot || !robot.isFaulted) return;
+
+      robot.isFaulted = false;
+      robot.faultReason = '';
+      robot.state = 'RETURNING_HOME';
+      robot.targetDesc = `Repaired: Returning to ${robot.homeBayId}`;
+      robot.path = findAStarPath(robot.gridX, robot.gridY, robot.homeX, robot.homeY);
+      robot.pathIndex = 0;
+
+      logTerminal('SYSTEM', 'tag-complete', `🔧 <strong>${robot.id}</strong> actuator reset & diagnostic PASSED. Robot restored to active fleet.`);
+      updateHudStats();
+    }
+
+    // -------------------------------------------------------------
+    // Motion Loop & Physics Update
+    // -------------------------------------------------------------
+    function updateRobots(dt) {
+      const speed = ROBOT_BASE_SPEED * simSpeed;
+
+      for (const robot of AMR_FLEET) {
+        if (robot.isFaulted) continue;
+
+        // Battery logic
+        if (robot.state === 'IDLE_CHARGING') {
+          robot.battery = Math.min(100, robot.battery + dt * 15 * simSpeed);
+        } else {
+          robot.battery = Math.max(0, robot.battery - dt * 0.35 * simSpeed);
+          // Low battery emergency trigger (<15%)
+          if (robot.battery <= 15 && robot.state !== 'RETURNING_HOME' && !robot.isLowBatteryHandled) {
+            robot.isLowBatteryHandled = true;
+            logTerminal('BATTERY', 'tag-yield', `⚡ Critical Battery on <strong>${robot.id}</strong> (${Math.round(robot.battery)}%). Routing to Charger.`);
+            if (robot.cargo) initiateTaskRescueHandoff(robot);
+            robot.state = 'RETURNING_HOME';
+            robot.path = findAStarPath(robot.gridX, robot.gridY, robot.homeX, robot.homeY);
+            robot.pathIndex = 0;
+          }
+        }
+
+        // Conflict check
+        arbitrateTraffic(robot);
+        if (robot.state === 'HUMAN_SAFETY_STOP') continue;
+
+        if (!robot.path || robot.path.length === 0 || robot.pathIndex >= robot.path.length) continue;
+
+        const targetCell = robot.path[robot.pathIndex];
+        const dx = targetCell.x - robot.x;
+        const dy = targetCell.y - robot.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist > 0.001) {
+          const targetHeading = Math.atan2(dy, dx);
+          let diff = targetHeading - robot.heading;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          robot.heading += diff * Math.min(1, dt * 14 * simSpeed);
+        }
+
+        const step = speed * dt;
+        if (dist <= step) {
+          robot.x = targetCell.x;
+          robot.y = targetCell.y;
+          robot.gridX = targetCell.x;
+          robot.gridY = targetCell.y;
+          robot.pathIndex++;
+
+          if (robot.pathIndex >= robot.path.length) {
+            robot.path = [];
+            robot.pathIndex = 0;
+            onRobotReachedDestination(robot);
+          }
+        } else {
+          robot.x += (dx / dist) * step;
+          robot.y += (dy / dist) * step;
+          robot.gridX = Math.round(robot.x);
+          robot.gridY = Math.round(robot.y);
+        }
+      }
+
+      // Update human worker patrol steps
+      for (const worker of humanWorkers) {
+        if (worker.isMoving) {
+          worker.y += worker.dir * dt * 1.5 * simSpeed;
+          if (worker.y > 22) { worker.y = 22; worker.dir = -1; }
+          if (worker.y < 5) { worker.y = 5; worker.dir = 1; }
+        }
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Canvas Drawing & Visual Elements
+    // -------------------------------------------------------------
+    function render() {
+      if (!mapData) return;
+      const dpr = window.devicePixelRatio;
+      ctx.save();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.scale(dpr, dpr);
+      ctx.translate(camera.x, camera.y);
+
+      const cellSize = camera.scale;
+
+      // 1. Corridors & Subtle Gridlines
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, mapData.width * cellSize, mapData.height * cellSize);
+      ctx.strokeStyle = '#172033';
+      ctx.lineWidth = 0.5;
+      for (let x = 0; x <= mapData.width; x++) {
+        ctx.beginPath(); ctx.moveTo(x * cellSize, 0); ctx.lineTo(x * cellSize, mapData.height * cellSize); ctx.stroke();
+      }
+      for (let y = 0; y <= mapData.height; y++) {
+        ctx.beginPath(); ctx.moveTo(0, y * cellSize); ctx.lineTo(mapData.width * cellSize, y * cellSize); ctx.stroke();
+      }
+
+      // 2. Storage Racks (Dark Charcoal with Tier Indicators)
+      for (let x = 0; x < mapData.width; x++) {
+        for (let y = 0; y < mapData.height; y++) {
+          if (mapData.grid[x][y] === 1) {
+            const isPerimeter = (x === 0 || x === mapData.width - 1 || y === 0 || y === mapData.height - 1);
+            if (isPerimeter) {
+              ctx.fillStyle = '#0e1116';
+              ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+            } else {
+              const rack = rackMemory[`${x},${y}`];
+              const occCount = rack ? rack.floors.filter(f => f !== null).length : 0;
+              ctx.fillStyle = occCount === 5 ? '#1c1917' : (occCount > 0 ? '#111827' : '#151821');
+              ctx.fillRect(x * cellSize + 0.5, y * cellSize + 0.5, cellSize - 1, cellSize - 1);
+
+              ctx.strokeStyle = occCount === 5 ? '#f59e0b' : (occCount > 0 ? '#38bdf8' : '#282d37');
+              ctx.lineWidth = occCount === 5 ? 1.5 : 1;
+              ctx.strokeRect(x * cellSize + 1, y * cellSize + 1, cellSize - 2, cellSize - 2);
+
+              // 5-Floor Level pips
+              if (cellSize >= 14 && occCount > 0) {
+                const pipW = (cellSize - 4) / 5;
+                for (let f = 0; f < occCount; f++) {
+                  ctx.fillStyle = occCount === 5 ? '#facc15' : '#38bdf8';
+                  ctx.fillRect(x * cellSize + 2 + f * pipW, y * cellSize + cellSize - 3.5, pipW - 1, 2);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // 3. Dynamic Obstacles & Hazards (Striped hazard blocks)
+      for (const key of dynamicHazards) {
+        const [hx, hy] = key.split(',').map(Number);
+        const sx = hx * cellSize, sy = hy * cellSize;
+        ctx.fillStyle = '#ef4444';
+        ctx.fillRect(sx, sy, cellSize, cellSize);
+        ctx.strokeStyle = '#fee2e2';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(sx + 1, sy + 1, cellSize - 2, cellSize - 2);
+
+        // Warning Triangle ⚠️
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold ${Math.max(8, cellSize * 0.5)}px monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('⚠️', sx + cellSize / 2, sy + cellSize / 2);
+      }
+
+      // 4. Functional Stations (Pickups, Dropoffs, Fast Chargers)
+      for (const st of Object.values(mapData.stations)) {
+        const sx = st.x * cellSize, sy = st.y * cellSize;
+        if (st.type === 'charging' || st.id.startsWith('CH')) {
+          ctx.fillStyle = '#22c55e';
+          ctx.fillRect(sx + 1, sy + 1, cellSize - 2, cellSize - 2);
+          ctx.strokeStyle = '#86efac';
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(sx + 0.5, sy + 0.5, cellSize - 1, cellSize - 1);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = `bold ${Math.max(9, cellSize * 0.55)}px monospace`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('⚡', sx + cellSize / 2, sy + cellSize / 2);
+        } else if (st.type === 'pickup' || st.id.startsWith('P')) {
+          const q = inboundQueues[st.id] || [];
+          const hasParcel = q.length > 0;
+          ctx.fillStyle = hasParcel ? '#facc15' : '#06b6d4';
+          ctx.fillRect(sx + 1, sy + 1, cellSize - 2, cellSize - 2);
+          ctx.fillStyle = hasParcel ? '#0f172a' : '#ffffff';
+          ctx.font = `bold ${Math.max(9, cellSize * 0.55)}px monospace`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('P', sx + cellSize / 2, sy + cellSize / 2);
+        } else if (st.type === 'dropoff' || st.id.startsWith('D')) {
+          const ord = outboundOrders[st.id];
+          const hasOrder = ord !== null && ord !== undefined;
+          ctx.fillStyle = hasOrder ? '#facc15' : '#ea580c';
+          ctx.fillRect(sx + 1, sy + 1, cellSize - 2, cellSize - 2);
+          ctx.fillStyle = hasOrder ? '#0f172a' : '#ffffff';
+          ctx.font = `bold ${Math.max(9, cellSize * 0.55)}px monospace`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('D', sx + cellSize / 2, sy + cellSize / 2);
+        }
+      }
+
+      // 5. Human Workers (Safety Radar Circle)
+      for (const worker of humanWorkers) {
+        const wx = (worker.x + 0.5) * cellSize;
+        const wy = (worker.y + 0.5) * cellSize;
+        const rad = cellSize * worker.safetyRadius;
+
+        // Pulsing Safety Interlock Bubble
+        const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 250);
+        ctx.beginPath();
+        ctx.arc(wx, wy, rad, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(251, 191, 36, ${0.15 + 0.08 * pulse})`;
+        ctx.fill();
+        ctx.strokeStyle = '#fbbf24';
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([4, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Human Icon
+        ctx.fillStyle = '#f59e0b';
+        ctx.beginPath();
+        ctx.arc(wx, wy, cellSize * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `${Math.max(10, cellSize * 0.55)}px monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('👷', wx, wy);
+      }
+
+      // 6. AMR Robot Fleet (8 Units)
+      for (const r of AMR_FLEET) {
+        drawRobot(ctx, r, cellSize);
+      }
+
+      ctx.restore();
+    }
+
+    function drawRobot(ctx, r, cellSize) {
+      const cx = (r.x + 0.5) * cellSize;
+      const cy = (r.y + 0.5) * cellSize;
+      const radius = Math.max(5, cellSize * 0.44);
+
+      // Trajectory dashed line
+      if (r.path && r.path.length > 0 && r.pathIndex < r.path.length) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        for (let i = r.pathIndex; i < r.path.length; i++) {
+          ctx.lineTo((r.path[i].x + 0.5) * cellSize, (r.path[i].y + 0.5) * cellSize);
+        }
+        ctx.strokeStyle = r.isYielding ? '#f59e0b' : (r.state === 'RESCUING' ? '#c084fc' : '#38bdf8');
+        ctx.lineWidth = Math.max(1.2, cellSize * 0.08);
+        ctx.setLineDash([4, 4]);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      ctx.save();
+      ctx.translate(cx, cy);
+
+      // LiDAR Safety Cone when moving
+      if (r.path.length > 0 && !r.isFaulted && r.state !== 'HUMAN_SAFETY_STOP') {
+        ctx.save();
+        ctx.rotate(r.heading);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, radius * 3.2, -0.45, 0.45);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.08)';
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Status Ring Colors
+      let ringColor = '#38bdf8';
+      let glowColor = 'rgba(56, 189, 248, 0.6)';
+      if (r.isFaulted) {
+        ringColor = '#ef4444';
+        glowColor = 'rgba(239, 68, 68, 0.9)';
+      } else if (r.state === 'IDLE_CHARGING') {
+        ringColor = '#22c55e';
+        glowColor = 'rgba(34, 197, 94, 0.7)';
+      } else if (r.state === 'HUMAN_SAFETY_STOP') {
+        ringColor = '#fbbf24';
+        glowColor = 'rgba(251, 191, 36, 0.8)';
+      } else if (r.cargo && r.cargo.priority === 'URGENT') {
+        ringColor = '#a855f7'; // Cold-Chain Pharma VIP Ring
+        glowColor = 'rgba(168, 85, 247, 0.8)';
+      }
+
+      ctx.shadowColor = glowColor;
+      ctx.shadowBlur = 8;
+
+      // Robot Chassis
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      ctx.fillStyle = r.isFaulted ? '#1c1917' : '#0f172a';
+      ctx.fill();
+      ctx.lineWidth = Math.max(1.5, cellSize * 0.08);
+      ctx.strokeStyle = ringColor;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Heading indicator
+      ctx.save();
+      ctx.rotate(r.heading);
+      ctx.fillStyle = ringColor;
+      ctx.beginPath();
+      ctx.moveTo(radius * 0.9, 0);
+      ctx.lineTo(radius * 0.45, -radius * 0.32);
+      ctx.lineTo(radius * 0.45, radius * 0.32);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      // Physical Cargo Box or Bot Number
+      if (r.isFaulted) {
+        ctx.fillStyle = '#ef4444';
+        ctx.font = `bold ${Math.max(9, radius * 0.95)}px monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('⚠️', 0, 0);
+      } else if (r.cargo) {
+        const boxSize = radius * 1.15;
+        const half = boxSize / 2;
+        ctx.fillStyle = r.cargo.priority === 'URGENT' ? '#7e22ce' : '#b45309';
+        ctx.fillRect(-half, -half, boxSize, boxSize);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold ${Math.max(7, radius * 0.65)}px monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(r.cargo.priority === 'URGENT' ? '❄️' : '📦', 0, 0);
+      } else {
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = `bold ${Math.max(8, radius * 0.95)}px monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(`${r.num}`, 0, 0);
+
+        // Battery Gauge Bar
+        if (cellSize >= 14) {
+          const bw = radius * 0.9, bh = 2.5;
+          const pct = Math.max(0, Math.min(1, r.battery / 100));
+          ctx.fillStyle = '#334155'; ctx.fillRect(-bw / 2, radius * 0.5, bw, bh);
+          ctx.fillStyle = r.battery > 40 ? '#22c55e' : (r.battery > 20 ? '#f59e0b' : '#ef4444');
+          ctx.fillRect(-bw / 2, radius * 0.5, bw * pct, bh);
+        }
+      }
+
+      ctx.restore();
+    }
+
+    // -------------------------------------------------------------
+    // SIH Scenarios Presets
+    // -------------------------------------------------------------
+    function triggerScenario(id) {
+      currentScenarioId = id;
+      document.querySelectorAll('.scenario-btn').forEach((b, i) => b.classList.toggle('active', i === id));
+
+      if (id === 0) {
+        // Normal Autonomous Operations
+        clearDynamicHazards();
+        logTerminal('SCENARIO', 'tag-system', '▶️ <strong>SCENARIO 0:</strong> Continuous Autonomous Distributed Fleet Operations Active.');
+      } else if (id === 1) {
+        // Narrow Aisle Head-On Conflict & Priority Yielding
+        clearDynamicHazards();
+        logTerminal('SCENARIO', 'tag-yield', '🎯 <strong>SCENARIO 1:</strong> Narrow Aisle Conflict. Dispatching high-priority Pharma AMR vs Standard AMR in single-lane aisle.');
+
+        const r1 = AMR_FLEET[0]; // High Priority Pharma
+        const r2 = AMR_FLEET[1]; // Standard Cargo
+
+        r1.x = 32; r1.y = 5; r1.gridX = 32; r1.gridY = 5;
+        r1.cargo = { parcel_id: 'PKG-VVIP', priority: 'URGENT', sku: 'SKU-PHRM', name: 'Cold-Chain Vaccine Tote' };
+        r1.state = 'CARRYING_TO_BAY';
+        r1.path = findAStarPath(32, 5, 32, 22);
+
+        r2.x = 32; r2.y = 22; r2.gridX = 32; r2.gridY = 22;
+        r2.cargo = { parcel_id: 'PKG-901', priority: 'NORMAL', sku: 'SKU-FASH', name: 'Standard Apparel' };
+        r2.state = 'CARRYING_TO_RACK';
+        r2.path = findAStarPath(32, 22, 32, 5);
+
+      } else if (id === 2) {
+        // Human Worker Safety Brake & Detour
+        clearDynamicHazards();
+        logTerminal('SCENARIO', 'tag-safety', '🎯 <strong>SCENARIO 2:</strong> Human Safety Interlock. Placing worker at aisle intersection (35, 12). Approaching AMR will safety-brake.');
+
+        humanWorkers.length = 0;
+        humanWorkers.push({ id: 'H-01', name: 'Rajesh (Inspector)', x: 35, y: 12, dir: 1, isMoving: false, safetyRadius: 1.8 });
+
+        const r = AMR_FLEET[2];
+        r.x = 35; r.y = 6; r.gridX = 35; r.gridY = 6;
+        r.cargo = { parcel_id: 'PKG-TEST', priority: 'HIGH', sku: 'SKU-ELEC', name: 'Electronics' };
+        r.state = 'CARRYING_TO_BAY';
+        r.path = findAStarPath(35, 6, 35, 20);
+
+      } else if (id === 3) {
+        // Actuator Fault & Autonomous Task Rescue Handoff
+        clearDynamicHazards();
+        logTerminal('SCENARIO', 'tag-rescue', '🎯 <strong>SCENARIO 3:</strong> Robot Actuator Breakdown. AMR-01 fails mid-aisle. AMR-03 will execute autonomous cargo rescue.');
+
+        const r1 = AMR_FLEET[0];
+        r1.x = 32; r1.y = 14; r1.gridX = 32; r1.gridY = 14;
+        r1.cargo = { parcel_id: 'PKG-URGENT-44', priority: 'HIGH', sku: 'SKU-AUTO', name: 'Critical Auto Parts' };
+        r1.currentTask = { bayId: 'D-02', bayX: 1, bayY: 31 };
+
+        setTimeout(() => { triggerRobotBreakdown('AMR-01', 'Drive Actuator Stall'); }, 600);
+
+      } else if (id === 4) {
+        // Low Battery Limp & Auto-Recharge Handoff
+        clearDynamicHazards();
+        logTerminal('SCENARIO', 'tag-yield', '🎯 <strong>SCENARIO 4:</strong> Battery Critical Preemption. Depleting AMR-04 battery to 10%. AMR un-assigns task and seeks charger.');
+
+        const r = AMR_FLEET[3];
+        r.battery = 10;
+        r.cargo = { parcel_id: 'PKG-BAT', priority: 'NORMAL', sku: 'SKU-FMCG', name: 'Packaged Goods' };
+        r.state = 'CARRYING_TO_BAY';
+        r.path = findAStarPath(r.gridX, r.gridY, 1, 35);
+
+      } else if (id === 5) {
+        // Rush-Hour Surge Stress Test
+        logTerminal('SCENARIO', 'tag-system', '🎯 <strong>SCENARIO 5:</strong> Rush-Hour Wave: Ingesting 40 parcels across all docks and departure bays.');
+        for (let i = 0; i < 4; i++) {
+          triggerInboundShipment();
+          triggerOutboundOrder();
+        }
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Inbound & Outbound Shipment Generators
+    // -------------------------------------------------------------
+    function triggerInboundShipment() {
+      if (!mapData || !mapData.stations) return;
+      const pickups = Object.keys(mapData.stations).filter(id => id.startsWith('P'));
+      if (pickups.length === 0) return;
+
+      const chosenDock = pickups[Math.floor(Math.random() * pickups.length)];
+      const r = Math.floor(Math.random() * 6) + 2; // 2 to 7 parcels
+
+      const batch = [];
+      for (let i = 0; i < r; i++) {
+        parcelSequence++;
+        const skuInfo = SKU_CATALOG[Math.floor(Math.random() * SKU_CATALOG.length)];
+        batch.push({
+          parcel_id: `PKG-${parcelSequence}`,
+          sku: skuInfo.sku,
+          name: skuInfo.name,
+          weight: `${skuInfo.weight}kg`,
+          priority: skuInfo.priority,
+          dock: chosenDock,
+          timestamp: new Date().toLocaleTimeString()
+        });
+      }
+
+      inboundQueues[chosenDock].push(...batch);
+      const st = mapData.stations[chosenDock];
+      logTerminal('INBOUND', 'tag-inbound', `📦 Inbound Dock <strong>${chosenDock}</strong> received shipment of <strong>${r} parcels</strong>.`);
+
+      for (const parcel of batch) {
+        const slot = findAvailableRackSlot(parcel.sku);
+        if (slot) {
+          slot.rack.floors[slot.floorIndex] = { isReservedInbound: true, parcel };
+          inboundTasks.push({
+            type: 'INBOUND',
+            dockId: chosenDock,
+            dockX: st.x,
+            dockY: st.y,
+            rackSlot: slot,
+            parcel
+          });
+        }
+      }
+      updateHudStats();
+      dispatchFleet();
+    }
+
+    function triggerOutboundOrder() {
+      if (!mapData || !mapData.stations) return;
+      const dropoffs = Object.keys(mapData.stations).filter(id => id.startsWith('D'));
+      if (dropoffs.length === 0) return;
+
+      const chosenBay = dropoffs[Math.floor(Math.random() * dropoffs.length)];
+      const r = Math.floor(Math.random() * 5) + 2;
+
+      const allStored = [];
+      for (const rack of Object.values(rackMemory)) {
+        for (let f = 0; f < MAX_FLOORS; f++) {
+          const item = rack.floors[f];
+          if (item && !item.isReservedInbound && !item.isReservedOutbound) {
+            allStored.push({ parcel: item, rack, floorIndex: f, floorNum: f + 1 });
+          }
+        }
+      }
+
+      if (allStored.length === 0) return;
+      allStored.sort(() => Math.random() - 0.5);
+
+      const retrieved = allStored.slice(0, r);
+      orderSequence++;
+      const orderId = `ORD-${orderSequence}`;
+      const st = mapData.stations[chosenBay];
+
+      outboundOrders[chosenBay] = { orderId, bayId: chosenBay, totalCount: retrieved.length, deliveredCount: 0 };
+
+      for (const item of retrieved) {
+        item.rack.floors[item.floorIndex] = { isReservedOutbound: true, parcel: item.parcel };
+        outboundTasks.push({
+          type: 'OUTBOUND',
+          orderId,
+          bayId: chosenBay,
+          bayX: st.x,
+          bayY: st.y,
+          rack: item.rack,
+          floorIndex: item.floorIndex,
+          floorNum: item.floorNum,
+          parcel: item.parcel
+        });
+      }
+
+      logTerminal('OUTBOUND', 'tag-outbound', `🚚 Order <strong>${orderId}</strong> placed at <strong>${chosenBay}</strong> for <strong>${retrieved.length} parcels</strong>.`);
+      updateHudStats();
+      dispatchFleet();
+    }
+
+    function findAvailableRackSlot(sku) {
+      const designated = [];
+      const any = [];
+      for (const rack of Object.values(rackMemory)) {
+        for (let f = 0; f < MAX_FLOORS; f++) {
+          if (rack.floors[f] === null) {
+            const slot = { rack, floorIndex: f, floorNum: f + 1 };
+            if (rack.categorySku === sku) designated.push(slot);
+            any.push(slot);
+          }
+        }
+      }
+      if (designated.length > 0) return designated[Math.floor(Math.random() * designated.length)];
+      if (any.length > 0) return any[Math.floor(Math.random() * any.length)];
+      return null;
+    }
+
+    // -------------------------------------------------------------
+    // Interactive Tool Palette Actions
+    // -------------------------------------------------------------
+    function setTool(tool) {
+      currentTool = tool;
+      document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+      const btn = document.getElementById(`tool-${tool}`);
+      if (btn) btn.classList.add('active');
+    }
+
+    function clearDynamicHazards() {
+      dynamicHazards.clear();
+      humanWorkers.length = 0;
+      for (const r of AMR_FLEET) {
+        if (r.isFaulted) repairRobot(r.id);
+      }
+      logTerminal('SYSTEM', 'tag-complete', '🧹 All dynamic obstacles, human workers, and faults cleared.');
+      render();
+    }
+
+    function toggleEngineMode() {
+      isAiMode = !isAiMode;
+      const btn = document.getElementById('mode-toggle-btn');
+      const badge = document.getElementById('engine-badge');
+      const lbl = document.getElementById('mode-label');
+
+      if (isAiMode) {
+        btn.classList.add('btn-primary'); btn.classList.remove('btn-danger');
+        lbl.innerText = 'Mode: Edge-AI MAPF';
+        badge.innerText = 'AI MAPF ENGINE: ACTIVE';
+        badge.style.color = '#38bdf8';
+        logTerminal('AI MODE', 'tag-system', '⚡ <strong>Edge-AI MAPF Active:</strong> Space-time reservations, dynamic yielding, and self-healing fleet enabled.');
+      } else {
+        btn.classList.remove('btn-primary'); btn.classList.add('btn-danger');
+        lbl.innerText = 'Mode: Naive BFS (Clash Demo)';
+        badge.innerText = 'NAIVE UNCOORDINATED MODE';
+        badge.style.color = '#ef4444';
+        logTerminal('AI MODE', 'tag-safety', '⚠️ <strong>Naive BFS Active:</strong> Robots ignore other agents. Collisions and deadlocks will occur.');
+      }
+    }
+
+    function cycleSpeed() {
+      const idx = SPEED_PRESETS.indexOf(simSpeed);
+      simSpeed = SPEED_PRESETS[(idx + 1) % SPEED_PRESETS.length];
+      document.getElementById('speed-label').innerText = `${simSpeed}x Speed`;
+    }
+
+    // -------------------------------------------------------------
+    // Canvas Click / Mouse Handling
+    // -------------------------------------------------------------
+    canvas.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      dragStart.x = e.clientX - camera.x;
+      dragStart.y = e.clientY - camera.y;
+    });
+
+    window.addEventListener('mouseup', () => { isDragging = false; });
+
+    canvas.addEventListener('click', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const gx = Math.floor((e.clientX - rect.left - camera.x) / camera.scale);
+      const gy = Math.floor((e.clientY - rect.top - camera.y) / camera.scale);
+
+      if (gx < 0 || gx >= mapData.width || gy < 0 || gy >= mapData.height) return;
+
+      // Check click on AMR robot
+      const clickedRobot = AMR_FLEET.find(r => Math.hypot(r.x - gx, r.y - gy) <= 0.8);
+
+      if (currentTool === 'human') {
+        // Toggle human worker
+        const existingIdx = humanWorkers.findIndex(h => Math.hypot(h.x - gx, h.y - gy) <= 1.5);
+        if (existingIdx !== -1) {
+          humanWorkers.splice(existingIdx, 1);
+          logTerminal('HUMAN', 'tag-system', `👷 Worker removed from (${gx}, ${gy}).`);
+        } else {
+          humanWorkers.push({ id: `H-${humanWorkers.length + 1}`, name: 'Worker', x: gx, y: gy, dir: 1, isMoving: false, safetyRadius: 1.8 });
+          logTerminal('HUMAN', 'tag-safety', `👷 Placed human worker at (${gx}, ${gy}). Safety envelope active.`);
+        }
+      } else if (currentTool === 'hazard') {
+        // Toggle spilled box / hazard
+        const key = `${gx},${gy}`;
+        if (dynamicHazards.has(key)) {
+          dynamicHazards.delete(key);
+          logTerminal('HAZARD', 'tag-system', `Cleared hazard at (${gx}, ${gy}).`);
+        } else {
+          dynamicHazards.add(key);
+          logTerminal('HAZARD', 'tag-safety', `⚠️ Injected dynamic obstacle at (${gx}, ${gy}).`);
+        }
+      } else if (currentTool === 'breakdown') {
+        if (clickedRobot) triggerRobotBreakdown(clickedRobot.id, 'Manual Injected Stall');
+      } else if (currentTool === 'drain') {
+        if (clickedRobot) {
+          clickedRobot.battery = 5;
+          logTerminal('BATTERY', 'tag-yield', `⚡ Drained ${clickedRobot.id} battery to 5%.`);
+        }
+      } else if (currentTool === 'repair') {
+        if (clickedRobot) repairRobot(clickedRobot.id);
+      }
+      render();
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      if (isDragging) {
+        camera.x = e.clientX - dragStart.x;
+        camera.y = e.clientY - dragStart.y;
+        render();
+      }
+
+      // Tooltip Hover Inspection
+      const rect = canvas.getBoundingClientRect();
+      const gx = Math.floor((e.clientX - rect.left - camera.x) / camera.scale);
+      const gy = Math.floor((e.clientY - rect.top - camera.y) / camera.scale);
+
+      const hoveredBot = AMR_FLEET.find(r => Math.hypot(r.x - gx, r.y - gy) <= 0.8);
+      if (hoveredBot) {
+        tooltip.style.display = 'block';
+        tooltip.style.left = `${e.clientX + 14}px`;
+        tooltip.style.top = `${e.clientY + 14}px`;
+        tooltip.innerHTML = `
+          <div style="font-weight:700; color:#38bdf8; margin-bottom:4px;">🤖 ${hoveredBot.id} (AMR Fleet Unit)</div>
+          <div>Status: <strong>${hoveredBot.targetDesc}</strong></div>
+          <div>Priority Score: <strong>${Math.round(getRobotPriority(hoveredBot))}</strong></div>
+          <div>Battery: <strong style="color:${hoveredBot.battery > 30 ? '#22c55e' : '#ef4444'}">${Math.round(hoveredBot.battery)}%</strong></div>
+          <div>Cargo: <strong>${hoveredBot.cargo ? hoveredBot.cargo.parcel_id + ' (' + hoveredBot.cargo.name + ')' : '[Empty Deck]'}</strong></div>
+        `;
+        return;
+      }
+
+      const rack = rackMemory[`${gx},${gy}`];
+      if (rack) {
+        const occ = rack.floors.filter(f => f !== null).length;
+        tooltip.style.display = 'block';
+        tooltip.style.left = `${e.clientX + 14}px`;
+        tooltip.style.top = `${e.clientY + 14}px`;
+        tooltip.innerHTML = `
+          <div style="font-weight:700; color:#fff;">3D Storage Rack (${gx}, ${gy})</div>
+          <div style="color:#94a3b8; font-size:10px;">Category: ${rack.categoryName} (${rack.categorySku})</div>
+          <div style="margin-top:4px;">Occupancy: <strong>${occ} / ${MAX_FLOORS} Tiers Full</strong></div>
+        `;
+        return;
+      }
+
+      tooltip.style.display = 'none';
+    });
+
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      zoom(e.deltaY < 0 ? 1.15 : 0.85);
+    });
+
+    function zoom(factor) {
+      const centerW = (canvas.width / window.devicePixelRatio) / 2;
+      const centerH = (canvas.height / window.devicePixelRatio) / 2;
+      const newScale = Math.min(60, Math.max(8, camera.scale * factor));
+      camera.x = centerW - (centerW - camera.x) * (newScale / camera.scale);
+      camera.y = centerH - (centerH - camera.y) * (newScale / camera.scale);
+      camera.scale = newScale;
+      render();
+    }
+
+    function resetView() {
+      if (!mapData) return;
+      const w = canvas.width / window.devicePixelRatio;
+      const h = canvas.height / window.devicePixelRatio;
+      camera.scale = Math.max(10, Math.min((w - 80) / mapData.width, (h - 80) / mapData.height));
+      camera.x = (w - mapData.width * camera.scale) / 2;
+      camera.y = (h - mapData.height * camera.scale) / 2;
+      render();
+    }
+
+    function resize() {
+      canvas.width = canvas.parentElement.clientWidth * window.devicePixelRatio;
+      canvas.height = canvas.parentElement.clientHeight * window.devicePixelRatio;
+      render();
+    }
+    window.addEventListener('resize', resize);
+
+    // -------------------------------------------------------------
+    // HUD & Terminal Stream
+    // -------------------------------------------------------------
+    function updateHudStats() {
+      document.getElementById('kpi-collisions').innerText = `${kpiCollisionsPrevented} Prevented (0 Active)`;
+      document.getElementById('kpi-yields').innerText = `${kpiYieldConflictsResolved} Negotiated`;
+      document.getElementById('kpi-safety-stops').innerText = `${kpiSafetyStops} Triggered`;
+      document.getElementById('kpi-rescues').innerText = `${kpiSelfHealingRescues} Completed`;
+
+      let totalStored = 0;
+      for (const r of Object.values(rackMemory)) totalStored += r.floors.filter(f => f !== null).length;
+      const totalSlots = Object.keys(rackMemory).length * MAX_FLOORS || 7560;
+      const pct = ((totalStored / totalSlots) * 100).toFixed(1);
+      document.getElementById('kpi-occupancy').innerText = `${totalStored.toLocaleString()} / ${totalSlots.toLocaleString()} (${pct}%)`;
+
+      const healthy = AMR_FLEET.filter(r => !r.isFaulted).length;
+      document.getElementById('kpi-fleet-health').innerText = `${healthy} / ${AMR_FLEET.length} Healthy`;
+    }
+
+    function logConflict(msg) {
+      const card = document.getElementById('conflict-msg');
+      if (card) card.innerHTML = msg;
+    }
+
+    function logTerminal(action, tagClass, message) {
+      const body = document.getElementById('term-body');
+      if (!body) return;
+      const line = document.createElement('div');
+      line.className = 'term-line';
+      const time = new Date().toLocaleTimeString();
+      line.innerHTML = `
+        <span class="term-time">${time}</span>
+        <span class="term-tag ${tagClass}">[${action}]</span>
+        <span>${message}</span>
+      `;
+      body.appendChild(line);
+      body.scrollTop = body.scrollHeight;
+    }
+
+    function clearTerminal() {
+      const body = document.getElementById('term-body');
+      if (body) body.innerHTML = '';
+    }
+
+    function toggleTerminal() {
+      const p = document.getElementById('terminal-panel');
+      if (p) p.classList.toggle('collapsed');
+    }
+
+    // -------------------------------------------------------------
+    // Bulk Modal & Parcel Injection
+    // -------------------------------------------------------------
+    function openBulkModal() { document.getElementById('bulk-modal').classList.add('open'); }
+    function closeBulkModal() { document.getElementById('bulk-modal').classList.remove('open'); }
+    function setPresetN(n) { document.getElementById('bulk-input').value = n; }
+    function fillCapacity(ratio) {
+      const totalSlots = Object.keys(rackMemory).length * MAX_FLOORS || 7560;
+      document.getElementById('bulk-input').value = Math.floor(totalSlots * ratio);
+    }
+    function submitBulkIngest() {
+      const val = parseInt(document.getElementById('bulk-input').value, 10);
+      if (val > 0) {
+        for (let i = 0; i < val; i++) {
+          const sku = SKU_CATALOG[Math.floor(Math.random() * SKU_CATALOG.length)];
+          const slot = findAvailableRackSlot(sku.sku);
+          if (!slot) break;
+          parcelSequence++;
+          slot.rack.floors[slot.floorIndex] = {
+            parcel_id: `PKG-${parcelSequence}`,
+            sku: sku.sku,
+            name: sku.name,
+            weight: `${sku.weight}kg`,
+            priority: sku.priority
+          };
+        }
+        logTerminal('BULK INGEST', 'tag-complete', `📥 Injected <strong>${val} parcels</strong> directly into 3D storage tiers.`);
+        updateHudStats();
+        render();
+        closeBulkModal();
+      }
+    }
+
+    function resetFleetSimulation() {
+      initRackMemory();
+      initAmrFleet();
+      clearDynamicHazards();
+      kpiCollisionsPrevented = 0;
+      kpiYieldConflictsResolved = 0;
+      kpiSafetyStops = 0;
+      kpiSelfHealingRescues = 0;
+      updateHudStats();
+      logTerminal('SYSTEM', 'tag-system', '🔄 Fleet simulation, rack memory, and statistics reset.');
+      render();
+    }
+
+    // -------------------------------------------------------------
+    // Main Animation Loop & Startup
+    // -------------------------------------------------------------
+    let lastAnimTime = performance.now();
+    function animateLoop(now) {
+      if (!now) now = performance.now();
+      const dt = Math.min(0.1, (now - lastAnimTime) / 1000);
+      lastAnimTime = now;
+
+      updateRobots(dt);
+      render();
+      requestAnimationFrame(animateLoop);
+    }
+
+    async function loadMapAndStart() {
+      try {
+        const res = await fetch('/api/map');
+        mapData = await res.json();
+      } catch (err) {
+        console.warn('Backend API unavailable. Starting offline with high-fidelity fallback map.');
+        mapData = createFallbackMap();
+      }
+
+      initRackMemory();
+      initAmrFleet();
+      resize();
+      resetView();
+
+      logTerminal('STARTUP', 'tag-complete', '🚀 Edge-AI AMR Fleet Visualizer Online | SIH 2026 Edition');
+      logTerminal('MAPF', 'tag-system', 'Decentralized Conflict Avoidance & Self-Healing Fault Recovery Active.');
+
+      // Periodic Inbound / Outbound Timers
+      setInterval(triggerInboundShipment, 12000);
+      setInterval(triggerOutboundOrder, 15000);
+
+      lastAnimTime = performance.now();
+      requestAnimationFrame(animateLoop);
+    }
+
+    window.addEventListener('load', loadMapAndStart);
+  </script>
+</body>
+</html>
