@@ -86,8 +86,8 @@ SCENARIOS = [
     },
     {
         "id": 4,
-        "name": "Low-Battery Preemption & Limp Mode",
-        "description": "Battery critical trigger (<15%). AMR disengages active task, enters limp mode, and reserves nearest fast-charging bay."
+        "name": "Battery Depleted (Charged-Out) & Peer Takeover",
+        "description": "AMR battery completely depletes (0%) mid-transit with urgent cargo. Actuators lock, and a peer AMR autonomously dispatches to take over the mission and complete delivery."
     },
     {
         "id": 5,

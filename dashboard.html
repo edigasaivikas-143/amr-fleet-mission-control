@@ -588,7 +588,7 @@
       <span>💥 3. Actuator Fault & Auto Task Rescue</span>
     </button>
     <button class="scenario-btn" id="scen-4" onclick="triggerScenario(4)">
-      <span>⚡ 4. Low-Battery Limp & Charging</span>
+      <span>⚡ 4. Battery Charged-Out & Peer Takeover</span>
     </button>
     <button class="scenario-btn" id="scen-5" onclick="triggerScenario(5)">
       <span>🚀 5. Rush-Hour Peak Surge (40 PKGs)</span>
@@ -619,7 +619,7 @@
       </button>
       <button class="tool-btn" id="tool-drain" onclick="setTool('drain')">
         ⚡
-        <span class="tooltip-text">Click any AMR to Drain Battery to 5%</span>
+        <span class="tooltip-text">Click any AMR to Drain Battery to 0% (Charged-Out Takeover)</span>
       </button>
       <button class="tool-btn" id="tool-repair" onclick="setTool('repair')">
         🔧
@@ -958,11 +958,11 @@
       if (mapData.grid[x][y] === 1) return false;
       if (!options.ignoreDynamic && dynamicHazards.has(`${x},${y}`)) return false;
 
-      // Obstacles include faulted or powered-off AMRs
+      // Obstacles include faulted, charged-out, or powered-off AMRs
       if (!options.ignoreDynamic) {
         for (const bot of AMR_FLEET) {
           if (options.ignoreBotId && bot.id === options.ignoreBotId) continue;
-          if ((bot.isFaulted || bot.isPoweredOff) && bot.gridX === x && bot.gridY === y) {
+          if ((bot.isFaulted || bot.isPoweredOff || bot.isChargedOut) && bot.gridX === x && bot.gridY === y) {
             return false;
           }
         }
@@ -981,6 +981,22 @@
         }
       }
       return best;
+    }
+
+    function findWalkableAdjacentCell(x, y, fromX, fromY) {
+      const dirs = [{ dx: 0, dy: -1 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }, { dx: 1, dy: 0 }];
+      let best = null, bestDist = Infinity;
+      for (const d of dirs) {
+        const nx = x + d.dx, ny = y + d.dy;
+        if (nx >= 0 && nx < mapData.width && ny >= 0 && ny < mapData.height && isCellWalkable(nx, ny, { ignoreDynamic: true })) {
+          const dist = Math.hypot(nx - fromX, ny - fromY);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = { x: nx, y: ny };
+          }
+        }
+      }
+      return best || { x, y };
     }
 
     function findAStarPath(sx, sy, gx, gy, options = {}) {
@@ -1121,18 +1137,14 @@
     }
 
     // -------------------------------------------------------------
-    // Bulletproof Non-Freezing Multi-Agent Conflict Arbitration
+    // Guaranteed Zero-Collision Multi-Agent Traffic Arbiter (MAPF)
     // -------------------------------------------------------------
     function arbitrateTraffic(robot, dt) {
-      if (!isAiMode) return;
-      if (robot.isFaulted || robot.isPoweredOff || robot.state === 'IDLE_CHARGING' || robot.state === 'LIFTING_CARGO' || robot.state === 'DEPOSITING_CARGO') return;
+      if (!isAiMode) return true;
+      if (robot.isFaulted || robot.isPoweredOff || robot.isChargedOut) return false;
+      if (robot.state === 'IDLE_CHARGING' || robot.state === 'LIFTING_CARGO' || robot.state === 'DEPOSITING_CARGO') return false;
 
-      if (robot.yieldCooldown > 0) {
-        robot.yieldCooldown -= dt;
-        return;
-      }
-
-      // 1. Human Safety Interlock (Absolute Priority)
+      // 1. Human Safety Interlock (Absolute Priority, ISO-3691-4)
       for (const worker of humanWorkers) {
         const dist = Math.hypot(robot.x - worker.x, robot.y - worker.y);
         if (dist <= 2.2) {
@@ -1141,7 +1153,7 @@
           }
           robot.state = 'HUMAN_SAFETY_STOP';
           robot.targetDesc = `🛑 Safety Stop: Human Worker (${worker.name})`;
-          robot.safetyStopTimer += dt;
+          robot.safetyStopTimer = (robot.safetyStopTimer || 0) + dt;
           kpiSafetyStops++;
           updateHudStats();
 
@@ -1158,7 +1170,7 @@
               logTerminal('SAFETY', 'tag-safety', `🔄 <strong>${robot.id}</strong> computed dynamic A* detour around human.`);
             }
           }
-          return;
+          return false;
         }
       }
 
@@ -1167,60 +1179,101 @@
         robot.safetyStopTimer = 0;
       }
 
-      if (!robot.path || robot.pathIndex >= robot.path.length) return;
+      if (!robot.path || robot.pathIndex >= robot.path.length) return false;
       const nextCell = robot.path[robot.pathIndex];
+      const myScore = getRobotPriority(robot);
 
-      // 2. AMR vs AMR Multi-Agent Arbitration
+      // 2. Multi-Agent Intersection, Follow, & Head-On Checks
       for (const other of AMR_FLEET) {
-        if (other.id === robot.id || other.isFaulted || other.isPoweredOff || other.state === 'IDLE_CHARGING') continue;
+        if (other.id === robot.id || other.isPoweredOff || other.state === 'IDLE_CHARGING') continue;
 
+        const otherScore = getRobotPriority(other);
         const otherNext = (other.path && other.pathIndex < other.path.length) ? other.path[other.pathIndex] : null;
-        const isOccupyingNext = (other.gridX === nextCell.x && other.gridY === nextCell.y);
-        const isHeadOn = otherNext && (otherNext.x === robot.gridX && otherNext.y === robot.gridY);
+        const distToOther = Math.hypot(robot.x - other.x, robot.y - other.y);
 
-        if (isOccupyingNext || isHeadOn) {
-          const myScore = getRobotPriority(robot);
-          const otherScore = getRobotPriority(other);
+        // A. Hard Proximity Bubble Check (Continuous Distance)
+        // If within 1.35 cells, check if advancing moves closer to other
+        if (distToOther < 1.35) {
+          const dxToOther = other.x - robot.x;
+          const dyToOther = other.y - robot.y;
+          const targetDx = nextCell.x - robot.x;
+          const targetDy = nextCell.y - robot.y;
+          const dot = dxToOther * targetDx + dyToOther * targetDy;
 
-          // CASE A: Inside Single-Lane Narrow Aisle (Columns 7, 10, 13, 16, 19, 22, 32, 35...)
-          if (SINGLE_LANE_COLUMNS.has(robot.gridX) && robot.gridX === other.gridX) {
-            if (myScore < otherScore) {
-              // We yield by retreating AWAY from the approaching higher-priority AMR
-              kpiYieldConflictsResolved++;
+          if (dot > 0.05) {
+            if (myScore < otherScore || (myScore === otherScore && robot.id > other.id)) {
+              robot.targetDesc = `Safety Hold: Proximity to ${other.id}`;
               kpiCollisionsPrevented++;
               updateHudStats();
-
-              robot.isYielding = true;
-              robot.yieldCooldown = 4.0;
-              robot.targetDesc = `Yielding to ${other.id} [Priority: ${Math.round(otherScore)} vs ${Math.round(myScore)}]`;
-
-              logConflict(`🔀 Aisle Conflict: <strong>${robot.id}</strong> yielding right-of-way to <strong>${other.id}</strong>`);
-              logTerminal('PRIORITY', 'tag-yield', `🛑 <strong>${robot.id}</strong> reversing to aisle exit to let high-priority <strong>${other.id}</strong> pass.`);
-
-              // Determine retreat exit direction away from other bot
-              const isOtherNorth = other.gridY < robot.gridY;
-              const retreatY = isOtherNorth ? (robot.gridY <= 23 ? 24 : 46) : (robot.gridY <= 23 ? 4 : 25);
-              const retreatPath = findAStarPath(robot.gridX, robot.gridY, robot.gridX, retreatY, { ignoreDynamic: true });
-
-              if (retreatPath.length > 0) {
-                robot.path = retreatPath;
-                robot.pathIndex = 0;
-                robot.state = 'YIELDING_POCKET';
-              }
-              return;
+              return false; // HOLD POSITION
             }
-          } 
-          // CASE B: Open Corridors / Cross-Aisles (y=23..26 or perimeter)
-          else {
-            if (myScore < otherScore) {
-              // Pause or sidestep 1 cell
-              robot.yieldCooldown = 1.5;
-              // Simply wait in place for other to clear cell
-              return;
+          }
+        }
+
+        // B. Target Cell Currently Occupied (Rear-End / Tail-gating Prevention)
+        const isTargetOccupied = Math.hypot(other.x - nextCell.x, other.y - nextCell.y) < 0.85;
+        if (isTargetOccupied) {
+          robot.targetDesc = `Hold: Waiting for ${other.id} to clear (${nextCell.x},${nextCell.y})`;
+          return false; // HOLD POSITION
+        }
+
+        // C. Converging / Intersection Conflict (Both robots targeting the SAME cell)
+        const isConverging = otherNext && (otherNext.x === nextCell.x && otherNext.y === nextCell.y);
+        if (isConverging) {
+          const distMe = Math.hypot(robot.x - nextCell.x, robot.y - nextCell.y);
+          const distOther = Math.hypot(other.x - nextCell.x, other.y - nextCell.y);
+
+          let iWin = false;
+          if (Math.abs(myScore - otherScore) > 0.1) {
+            iWin = myScore > otherScore;
+          } else if (Math.abs(distMe - distOther) > 0.1) {
+            iWin = distMe < distOther;
+          } else {
+            iWin = robot.id < other.id;
+          }
+
+          if (!iWin) {
+            robot.targetDesc = `Intersection Yield: Waiting for ${other.id} to cross (${nextCell.x},${nextCell.y})`;
+            kpiYieldConflictsResolved++;
+            kpiCollisionsPrevented++;
+            updateHudStats();
+            return false; // HOLD OUTSIDE INTERSECTION
+          }
+        }
+
+        // D. Head-On / Swap Conflict (A targeting B's cell AND B targeting A's cell)
+        const isHeadOn = otherNext && (otherNext.x === robot.gridX && otherNext.y === robot.gridY) && (other.gridX === nextCell.x && other.gridY === nextCell.y);
+        if (isHeadOn) {
+          if (myScore < otherScore || (myScore === otherScore && robot.id > other.id)) {
+            // Inside narrow single-lane aisle
+            if (SINGLE_LANE_COLUMNS.has(robot.gridX) && robot.gridX === other.gridX) {
+              if (robot.state !== 'YIELDING_POCKET') {
+                const isOtherNorth = other.gridY < robot.gridY;
+                const retreatY = isOtherNorth ? (robot.gridY <= 23 ? 24 : 46) : (robot.gridY <= 23 ? 4 : 25);
+                const retreatPath = findAStarPath(robot.gridX, robot.gridY, robot.gridX, retreatY, { ignoreDynamic: true });
+                if (retreatPath.length > 0) {
+                  robot.path = retreatPath;
+                  robot.pathIndex = 0;
+                  robot.state = 'YIELDING_POCKET';
+                  robot.targetDesc = `Reversing out of aisle for ${other.id}`;
+                  logConflict(`🔀 Aisle Conflict: <strong>${robot.id}</strong> yielding right-of-way to <strong>${other.id}</strong>`);
+                  logTerminal('PRIORITY', 'tag-yield', `🛑 <strong>${robot.id}</strong> reversing to aisle exit to let high-priority <strong>${other.id}</strong> pass.`);
+                  kpiYieldConflictsResolved++;
+                  kpiCollisionsPrevented++;
+                  updateHudStats();
+                }
+              }
+              return true; // Let it advance backwards along retreatPath
+            } else {
+              // Open area: hold position
+              robot.targetDesc = `Yielding lane to ${other.id}`;
+              return false;
             }
           }
         }
       }
+
+      return true; // CLEAR TO ADVANCE
     }
 
     // -------------------------------------------------------------
@@ -1340,8 +1393,10 @@
         let badgeText = 'ACTIVE';
 
         if (isOff) { badgeColor = '#ef4444'; badgeText = 'SUSPENDED'; }
+        else if (r.isChargedOut) { badgeColor = '#f97316'; badgeText = '⚡ CHARGED OUT'; }
         else if (isFault) { badgeColor = '#ef4444'; badgeText = 'FAULTED'; }
         else if (r.state === 'IDLE_CHARGING') { badgeColor = '#22c55e'; badgeText = 'CHARGING'; }
+        else if (r.state === 'RESCUING') { badgeColor = '#38bdf8'; badgeText = 'RESCUING'; }
         else if (r.state === 'YIELDING_POCKET') { badgeColor = '#f59e0b'; badgeText = 'YIELDING'; }
         else if (r.state === 'LIFTING_CARGO' || r.state === 'DEPOSITING_CARGO') { badgeColor = '#38bdf8'; badgeText = 'LIFTING'; }
 
@@ -1545,53 +1600,97 @@
       robot.state = 'FAULT_STOPPED';
       robot.targetDesc = `⚠️ CRITICAL FAULT: ${reason}`;
       robot.path = [];
+      robot.pathIndex = 0;
 
       logTerminal('FAULT', 'tag-safety', `🚨 <strong>${robot.id}</strong> CRITICAL FAILURE: ${reason} at (${robot.gridX}, ${robot.gridY}). Actuator halted.`);
 
       if (robot.cargo || robot.currentTask) {
-        initiateTaskRescueHandoff(robot);
+        initiateTaskRescueHandoff(robot, reason);
       }
       updateHudStats();
       updateFleetPowerCards();
     }
 
-    function initiateTaskRescueHandoff(faultedBot) {
-      logTerminal('RESCUE', 'tag-rescue', `🔄 <strong>AUTONOMOUS FLEET RESCUE:</strong> Dispatching surrogate AMR to take over ${faultedBot.id}'s mission.`);
+    function triggerChargedOut(robot) {
+      if (!robot || robot.isChargedOut) return;
+      robot.isChargedOut = true;
+      robot.isFaulted = true;
+      robot.battery = 0;
+      robot.faultReason = 'Battery Depleted (0%)';
+      robot.state = 'CHARGED_OUT';
+      robot.targetDesc = '⚡ CHARGED OUT (0% Battery) - Awaiting Peer Rescue';
+      robot.path = [];
+      robot.pathIndex = 0;
+
+      logTerminal('BATTERY', 'tag-yield', `⚡🚨 <strong>${robot.id}</strong> HAS CHARGED OUT (0% Battery) at (${robot.gridX}, ${robot.gridY})! Actuators immobilized. Initiating peer takeover protocol.`);
+
+      if (robot.cargo || robot.currentTask) {
+        initiateTaskRescueHandoff(robot, 'Battery Depleted (0%)');
+      }
+      updateHudStats();
+      updateFleetPowerCards();
+    }
+
+    function initiateTaskRescueHandoff(deadBot, reason = 'Breakdown / Depleted') {
+      logTerminal('RESCUE', 'tag-rescue', `🔄 <strong>AUTONOMOUS PEER TAKEOVER:</strong> Dispatching surrogate AMR to take over ${deadBot.id}'s mission (${reason}).`);
 
       let surrogate = null;
-      let bestDist = Infinity;
+      let bestBid = Infinity;
       for (const bot of AMR_FLEET) {
-        if (bot.isFaulted || bot.isPoweredOff || bot.battery < 20 || bot.id === faultedBot.id) continue;
-        const d = Math.abs(bot.gridX - faultedBot.gridX) + Math.abs(bot.gridY - faultedBot.gridY);
-        if (d < bestDist) { bestDist = d; surrogate = bot; }
+        if (bot.isFaulted || bot.isPoweredOff || bot.isChargedOut || bot.battery < 30 || bot.id === deadBot.id) continue;
+        const d = Math.abs(bot.gridX - deadBot.gridX) + Math.abs(bot.gridY - deadBot.gridY);
+        const bid = d + (100 - bot.battery) * 0.3;
+        if (bid < bestBid) { bestBid = bid; surrogate = bot; }
       }
 
       if (surrogate) {
-        surrogate.state = 'RESCUING';
-        surrogate.rescueTarget = faultedBot;
-        surrogate.targetDesc = `Rescue Task: Rendezvous with ${faultedBot.id}`;
+        // If dead bot has cargo on deck, surrogate navigates to rendezvous with dead bot
+        if (deadBot.cargo) {
+          surrogate.state = 'RESCUING';
+          surrogate.rescueTarget = deadBot;
+          surrogate.targetDesc = `Rescue Takeover: Rendezvous with ${deadBot.id}`;
 
-        const access = getAccessPointForRack(faultedBot.gridX, faultedBot.gridY, surrogate.gridX, surrogate.gridY) || { x: faultedBot.gridX + 1, y: faultedBot.gridY };
-        surrogate.path = findAStarPath(surrogate.gridX, surrogate.gridY, access.x, access.y, { ignoreDynamic: true });
-        surrogate.pathIndex = 0;
+          const rendezvous = findWalkableAdjacentCell(deadBot.gridX, deadBot.gridY, surrogate.gridX, surrogate.gridY);
+          surrogate.path = findAStarPath(surrogate.gridX, surrogate.gridY, rendezvous.x, rendezvous.y, { ignoreDynamic: true });
+          surrogate.pathIndex = 0;
 
-        logTerminal('RESCUE', 'tag-rescue', `🤖 <strong>${surrogate.id}</strong> accepted rescue protocol for <strong>${faultedBot.id}</strong>. Navigating to rendezvous point.`);
-        kpiSelfHealingRescues++;
-        updateHudStats();
+          logTerminal('RESCUE', 'tag-rescue', `🤖 <strong>${surrogate.id}</strong> (Bat: ${Math.round(surrogate.battery)}%) accepted takeover contract for <strong>${deadBot.id}</strong>. Navigating to (${rendezvous.x}, ${rendezvous.y}) for cargo transfer.`);
+          kpiSelfHealingRescues++;
+          updateHudStats();
+        } 
+        // If dead bot had an assigned task without cargo (e.g. heading to dock pickup or rack retrieval)
+        else if (deadBot.currentTask) {
+          surrogate.currentTask = deadBot.currentTask;
+          deadBot.currentTask = null;
+          deadBot.targetDesc = `⚡ Stranded (${reason}) - Task transferred to ${surrogate.id}`;
+          resumeRobotTask(surrogate);
+          logTerminal('TAKEOVER', 'tag-complete', `🤝 <strong>${surrogate.id}</strong> directly adopted uncollected task from disabled <strong>${deadBot.id}</strong>! Resuming route.`);
+          kpiSelfHealingRescues++;
+          updateHudStats();
+        }
+      } else {
+        logTerminal('RESCUE', 'tag-safety', `⚠️ All available peers are currently busy or low on battery. Takeover for ${deadBot.id} queued.`);
       }
     }
 
     function completeRescueHandoff(surrogate) {
-      const faultedBot = surrogate.rescueTarget;
-      if (!faultedBot) { surrogate.state = 'IDLE'; dispatchFleet(); return; }
+      const deadBot = surrogate.rescueTarget;
+      if (!deadBot) { surrogate.state = 'IDLE'; dispatchFleet(); return; }
 
-      if (faultedBot.cargo) {
-        surrogate.cargo = faultedBot.cargo;
-        surrogate.currentTask = faultedBot.currentTask;
-        faultedBot.cargo = null;
+      if (deadBot.cargo) {
+        surrogate.cargo = deadBot.cargo;
+        surrogate.currentTask = deadBot.currentTask;
+        deadBot.cargo = null;
+        deadBot.currentTask = null;
+        deadBot.targetDesc = `⚡ Stranded (Cargo Transferred to ${surrogate.id})`;
 
-        logTerminal('RESCUE', 'tag-complete', `🤝 Cargo transfer complete! <strong>${surrogate.id}</strong> took over parcel <strong>${surrogate.cargo.parcel_id}</strong> from disabled ${faultedBot.id}. Resuming delivery.`);
+        logTerminal('TAKEOVER', 'tag-complete', `🤝 <strong>CARGO TAKEOVER COMPLETE:</strong> <strong>${surrogate.id}</strong> transferred parcel <strong>${surrogate.cargo.parcel_id}</strong> from stranded ${deadBot.id}. Resuming mission delivery!`);
 
+        surrogate.rescueTarget = null;
+        resumeRobotTask(surrogate);
+      } else if (deadBot.currentTask) {
+        surrogate.currentTask = deadBot.currentTask;
+        deadBot.currentTask = null;
         surrogate.rescueTarget = null;
         resumeRobotTask(surrogate);
       } else {
@@ -1599,20 +1698,24 @@
         surrogate.state = 'IDLE';
         dispatchFleet();
       }
+      updateHudStats();
+      updateFleetPowerCards();
     }
 
     function repairRobot(robotId) {
       const robot = AMR_FLEET.find(r => r.id === robotId);
-      if (!robot || !robot.isFaulted) return;
+      if (!robot || (!robot.isFaulted && !robot.isChargedOut)) return;
 
       robot.isFaulted = false;
+      robot.isChargedOut = false;
+      robot.battery = 100.0;
       robot.faultReason = '';
       robot.state = 'RETURNING_HOME';
-      robot.targetDesc = `Repaired: Returning to ${robot.homeBayId}`;
+      robot.targetDesc = `Recharged & Repaired: Returning to ${robot.homeBayId}`;
       robot.path = findAStarPath(robot.gridX, robot.gridY, robot.homeX, robot.homeY);
       robot.pathIndex = 0;
 
-      logTerminal('SYSTEM', 'tag-complete', `🔧 <strong>${robot.id}</strong> actuator reset & diagnostic PASSED. Robot restored to active fleet.`);
+      logTerminal('SYSTEM', 'tag-complete', `🔧 <strong>${robot.id}</strong> recharged to 100% & actuators reset. Robot restored to active fleet.`);
       updateHudStats();
       updateFleetPowerCards();
     }
@@ -1624,22 +1727,28 @@
       const speed = ROBOT_BASE_SPEED * simSpeed;
 
       for (const robot of AMR_FLEET) {
-        if (robot.isFaulted || robot.isPoweredOff) continue;
+        if (robot.isPoweredOff) continue;
 
         // Battery logic
         if (robot.state === 'IDLE_CHARGING') {
           robot.battery = Math.min(100, robot.battery + dt * 15 * simSpeed);
-        } else {
+          if (robot.battery >= 99) {
+            robot.isChargedOut = false;
+          }
+        } else if (!robot.isChargedOut && !robot.isFaulted) {
           robot.battery = Math.max(0, robot.battery - dt * 0.35 * simSpeed);
-          if (robot.battery <= 15 && robot.state !== 'RETURNING_HOME' && !robot.isLowBatteryHandled) {
-            robot.isLowBatteryHandled = true;
-            logTerminal('BATTERY', 'tag-yield', `⚡ Critical Battery on <strong>${robot.id}</strong> (${Math.round(robot.battery)}%). Routing to Charger.`);
-            if (robot.cargo) initiateTaskRescueHandoff(robot);
+          if (robot.battery <= 5.0) {
+            triggerChargedOut(robot);
+            continue;
+          } else if (robot.battery <= 20 && robot.state === 'IDLE') {
             robot.state = 'RETURNING_HOME';
+            robot.targetDesc = 'Low Battery (20%): Returning to Charger';
             robot.path = findAStarPath(robot.gridX, robot.gridY, robot.homeX, robot.homeY);
             robot.pathIndex = 0;
           }
         }
+
+        if (robot.isFaulted || robot.isChargedOut) continue;
 
         // Skip movement during physical cargo lift animations
         if (robot.state === 'LIFTING_CARGO' || robot.state === 'DEPOSITING_CARGO') {
@@ -1647,16 +1756,40 @@
           continue;
         }
 
-        // Conflict check with cooldown
-        arbitrateTraffic(robot, dt);
-        if (robot.state === 'HUMAN_SAFETY_STOP') continue;
+        // Proximity check for rescue handoff: if surrogate arrives within 1.45 cells of target
+        if (robot.state === 'RESCUING' && robot.rescueTarget) {
+          const dToTarget = Math.hypot(robot.x - robot.rescueTarget.x, robot.y - robot.rescueTarget.y);
+          if (dToTarget <= 1.45) {
+            completeRescueHandoff(robot);
+            continue;
+          }
+        }
 
-        // Deadlock Watchdog: Detect stationary blocked robots & auto-unstick after 1.8s
-        if (robot.path && robot.path.length > 0 && robot.state !== 'IDLE_CHARGING') {
+        // Space-Time Zero Collision Arbitration
+        const canAdvance = arbitrateTraffic(robot, dt);
+
+        if (!robot.path || robot.path.length === 0 || robot.pathIndex >= robot.path.length) continue;
+
+        const targetCell = robot.path[robot.pathIndex];
+        const dx = targetCell.x - robot.x;
+        const dy = targetCell.y - robot.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        // Always smoothly orient heading towards targetCell
+        if (dist > 0.001) {
+          const targetHeading = Math.atan2(dy, dx);
+          let diff = targetHeading - robot.heading;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          robot.heading += diff * Math.min(1, dt * 14 * simSpeed);
+        }
+
+        // Deadlock Watchdog: Detect stationary blocked robots & auto-unstick after 2.2s
+        if (robot.path && robot.path.length > 0 && robot.state !== 'IDLE_CHARGING' && robot.state !== 'HUMAN_SAFETY_STOP') {
           const moveDist = Math.hypot(robot.x - (robot.lastX || robot.x), robot.y - (robot.lastY || robot.y));
           if (moveDist < 0.04) {
             robot.stuckDuration = (robot.stuckDuration || 0) + dt;
-            if (robot.stuckDuration > 1.8) {
+            if (robot.stuckDuration > 2.2) {
               unstickRobot(robot);
             }
           } else {
@@ -1666,20 +1799,8 @@
           }
         }
 
-        if (!robot.path || robot.path.length === 0 || robot.pathIndex >= robot.path.length) continue;
-
-        const targetCell = robot.path[robot.pathIndex];
-        const dx = targetCell.x - robot.x;
-        const dy = targetCell.y - robot.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        if (dist > 0.001) {
-          const targetHeading = Math.atan2(dy, dx);
-          let diff = targetHeading - robot.heading;
-          while (diff < -Math.PI) diff += Math.PI * 2;
-          while (diff > Math.PI) diff -= Math.PI * 2;
-          robot.heading += diff * Math.min(1, dt * 14 * simSpeed);
-        }
+        // IF TRAFFIC ARBITER BLOCKED ADVANCE, HOLD POSITION!
+        if (!canAdvance) continue;
 
         const step = speed * dt;
         if (dist <= step) {
@@ -1699,6 +1820,31 @@
           robot.y += (dy / dist) * step;
           robot.gridX = Math.round(robot.x);
           robot.gridY = Math.round(robot.y);
+        }
+      }
+
+      // Hard Continuous Space Collision Shield (Enforce distance >= 1.05 cells between all AMRs)
+      for (let i = 0; i < AMR_FLEET.length; i++) {
+        const r1 = AMR_FLEET[i];
+        if (r1.isPoweredOff) continue;
+        for (let j = i + 1; j < AMR_FLEET.length; j++) {
+          const r2 = AMR_FLEET[j];
+          if (r2.isPoweredOff) continue;
+          const d = Math.hypot(r1.x - r2.x, r1.y - r2.y);
+          if (d < 1.05 && d > 0.0001) {
+            const push = (1.05 - d) * 0.5;
+            const nx = (r1.x - r2.x) / d;
+            const ny = (r1.y - r2.y) / d;
+            r1.x += nx * push;
+            r1.y += ny * push;
+            r2.x -= nx * push;
+            r2.y -= ny * push;
+            r1.gridX = Math.round(r1.x);
+            r1.gridY = Math.round(r1.y);
+            r2.gridX = Math.round(r2.x);
+            r2.gridY = Math.round(r2.y);
+            kpiCollisionsPrevented++;
+          }
         }
       }
 
@@ -1951,6 +2097,9 @@
       if (r.isPoweredOff) {
         ringColor = '#64748b';
         glowColor = 'rgba(100, 116, 139, 0.4)';
+      } else if (r.isChargedOut) {
+        ringColor = '#f97316';
+        glowColor = 'rgba(249, 115, 22, 0.9)';
       } else if (r.isFaulted) {
         ringColor = '#ef4444';
         glowColor = 'rgba(239, 68, 68, 0.9)';
@@ -1974,7 +2123,7 @@
       // Robot Chassis
       ctx.beginPath();
       ctx.arc(0, 0, radius, 0, Math.PI * 2);
-      ctx.fillStyle = (r.isFaulted || r.isPoweredOff) ? '#1c1917' : '#0f172a';
+      ctx.fillStyle = (r.isFaulted || r.isPoweredOff || r.isChargedOut) ? '#1c1917' : '#0f172a';
       ctx.fill();
       ctx.lineWidth = Math.max(1.5, cellSize * 0.08);
       ctx.strokeStyle = ringColor;
@@ -1984,7 +2133,7 @@
       ctx.shadowBlur = 0;
 
       // Heading indicator
-      if (!r.isPoweredOff) {
+      if (!r.isPoweredOff && !r.isChargedOut) {
         ctx.save();
         ctx.rotate(r.heading);
         ctx.fillStyle = ringColor;
@@ -2003,6 +2152,11 @@
         ctx.font = `bold ${Math.max(9, radius * 0.85)}px monospace`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText('⏸️', 0, 0);
+      } else if (r.isChargedOut) {
+        ctx.fillStyle = '#f97316';
+        ctx.font = `bold ${Math.max(9, radius * 0.95)}px monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('⚡', 0, 0);
       } else if (r.isFaulted) {
         ctx.fillStyle = '#ef4444';
         ctx.font = `bold ${Math.max(9, radius * 0.95)}px monospace`;
@@ -2093,13 +2247,13 @@
 
       } else if (id === 4) {
         clearDynamicHazards();
-        logTerminal('SCENARIO', 'tag-yield', '🎯 <strong>SCENARIO 4:</strong> Battery Critical Preemption. Depleting AMR-04 battery to 10%. AMR un-assigns task and seeks charger.');
+        logTerminal('SCENARIO', 'tag-yield', '⚡ <strong>SCENARIO 4:</strong> Battery Depletion & Peer Takeover. AMR-04 charges out (0% battery) carrying critical parcel. Peer AMR autonomously dispatches to take over mission.');
 
         const r = AMR_FLEET[3];
-        r.battery = 10;
-        r.cargo = { parcel_id: 'PKG-BAT', priority: 'NORMAL', sku: 'SKU-FMCG', name: 'Packaged Goods' };
-        r.state = 'CARRYING_TO_BAY';
-        r.path = findAStarPath(r.gridX, r.gridY, 1, 35);
+        r.x = 32; r.y = 12; r.gridX = 32; r.gridY = 12;
+        r.cargo = { parcel_id: 'PKG-URGENT-BAT', priority: 'HIGH', sku: 'SKU-ELEC', name: 'Critical Circuit Assemblies' };
+        r.currentTask = { bayId: 'D-04', bayX: 1, bayY: 37 };
+        triggerChargedOut(r);
 
       } else if (id === 5) {
         logTerminal('SCENARIO', 'tag-system', '🎯 <strong>SCENARIO 5:</strong> Rush-Hour Wave: Ingesting 40 parcels across all docks and departure bays.');
@@ -2316,8 +2470,7 @@
         if (clickedRobot) triggerRobotBreakdown(clickedRobot.id, 'Manual Injected Stall');
       } else if (currentTool === 'drain') {
         if (clickedRobot) {
-          clickedRobot.battery = 5;
-          logTerminal('BATTERY', 'tag-yield', `⚡ Drained ${clickedRobot.id} battery to 5%.`);
+          triggerChargedOut(clickedRobot);
         }
       } else if (currentTool === 'repair') {
         if (clickedRobot) repairRobot(clickedRobot.id);

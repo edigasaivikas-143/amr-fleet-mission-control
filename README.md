@@ -71,7 +71,7 @@ Evaluators can click any scenario button on the top toolbar to observe edge-case
 | **🔀 Scenario 1: Narrow Aisle Conflict** | Head-On Collision Avoidance | Two AMRs face each other in a 1-cell narrow aisle. High-priority Cold-Chain Pharma AMR gets right-of-way; Standard AMR reverses into a side pocket, yields, and resumes path. |
 | **👷 Scenario 2: Human Safety Stop** | Dynamic Obstacle & Worker Safety | Spawns human inspector at an intersection. Approaching AMR's LiDAR cone detects human, engages emergency brakes, waits, and calculates a dynamic A* detour around the pod. |
 | **💥 Scenario 3: Hardware Breakdown & Rescue** | Fleet Self-Healing & Fault Tolerance | Simulates an actuator stall on `AMR-01` carrying cargo. `AMR-03` responds to rescue protocol, navigates to `AMR-01`, transfers cargo, and completes delivery. |
-| **⚡ Scenario 4: Critical Battery Preemption** | Autonomous Energy Management | Depletes AMR battery to 10%. AMR un-assigns active mission, hands off task, enters low-power limp mode, and reserves the nearest vacant 50kW fast charger. |
+| **⚡ Scenario 4: Charged-Out AMR & Peer Takeover** | Autonomous Depletion Recovery | Depletes AMR battery to 0% (charged-out immobilizing breakdown) mid-transit with urgent cargo. A healthy peer AMR autonomously navigates to its location, takes over the cargo and task, and completes delivery. |
 | **🚀 Scenario 5: Rush-Hour Surge Wave** | Throughput & Queue Stress Test | Ingests 40 parcel requests simultaneously across all docks and bays. Demonstrates balanced multi-agent routing without a single deadlock. |
 | **🔄 Scenario 0: Continuous Autonomous Ops** | Standard Operation | Restores normal distributed fleet operations with continuous inbound and outbound flows. |
 
