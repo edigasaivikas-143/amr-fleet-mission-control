@@ -8,7 +8,7 @@
     :root {
       --bg: #090d16;
       --panel: #111827;
-      --panel-trans: rgba(17, 24, 39, 0.88);
+      --panel-trans: rgba(17, 24, 39, 0.9);
       --border: #1f293d;
       --border-accent: rgba(56, 189, 248, 0.35);
       --text: #e2e8f0;
@@ -57,6 +57,11 @@
       background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(239, 68, 68, 0.2));
       color: #fbbf24;
       border: 1px solid rgba(251, 191, 36, 0.5);
+    }
+    .badge-decent {
+      background: rgba(168, 85, 247, 0.18);
+      color: #c084fc;
+      border: 1px solid rgba(168, 85, 247, 0.45);
     }
 
     .top-actions { display: flex; align-items: center; gap: 8px; }
@@ -193,7 +198,7 @@
       position: absolute;
       top: 16px;
       right: 320px;
-      width: 330px;
+      width: 340px;
       background: var(--panel-trans);
       backdrop-filter: blur(14px);
       border: 1px solid var(--border-accent);
@@ -297,12 +302,33 @@
     .hud-val.warn { color: #f59e0b; }
     .hud-val.alert { color: #ef4444; }
 
-    /* Active Conflict Negotiation Card */
-    .conflict-card {
+    /* Decentralized Auction / CNP Card */
+    .auction-card {
       margin-top: 8px;
       padding: 8px;
-      background: rgba(15, 23, 42, 0.8);
-      border: 1px solid rgba(56, 189, 248, 0.2);
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(168, 85, 247, 0.3);
+      border-radius: 6px;
+      font-size: 10px;
+    }
+    .auction-header {
+      font-weight: 700;
+      color: #c084fc;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      text-transform: uppercase;
+      font-size: 10px;
+    }
+    .auction-msg { color: #cbd5e1; line-height: 1.4; }
+
+    /* Active Conflict Negotiation Card */
+    .conflict-card {
+      margin-top: 6px;
+      padding: 8px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(56, 189, 248, 0.25);
       border-radius: 6px;
       font-size: 10px;
     }
@@ -373,7 +399,7 @@
       position: absolute;
       bottom: 24px;
       right: 70px;
-      width: 520px;
+      width: 530px;
       max-width: calc(100vw - 380px);
       height: 195px;
       background: rgba(10, 14, 23, 0.95);
@@ -438,6 +464,7 @@
     .tag-safety { background: rgba(239, 68, 68, 0.25); color: #f87171; border: 1px solid #ef4444; }
     .tag-yield { background: rgba(245, 158, 11, 0.25); color: #fbbf24; border: 1px solid #f59e0b; }
     .tag-rescue { background: rgba(168, 85, 247, 0.25); color: #c084fc; border: 1px solid #a855f7; }
+    .tag-cnp { background: rgba(168, 85, 247, 0.2); color: #e9d5ff; border: 1px solid #a855f7; }
     .tag-inbound { background: rgba(6, 182, 212, 0.2); color: #22d3ee; border: 1px solid #06b6d4; }
     .tag-outbound { background: rgba(249, 115, 22, 0.2); color: #fb923c; border: 1px solid #f97316; }
     .tag-complete { background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid #22c55e; }
@@ -503,9 +530,10 @@
         <div style="display:flex; align-items:center; gap:8px;">
           <span class="brand-title">Edge AMR Fleet Mission Control</span>
           <span class="badge badge-sih">SIH 2026 EDITION</span>
-          <span class="badge" id="engine-badge">AI MAPF ENGINE: ACTIVE</span>
+          <span class="badge badge-decent">DECENTRALIZED MESH</span>
+          <span class="badge" id="engine-badge">AI MAPF ACTIVE</span>
         </div>
-        <div class="brand-sub">Distributed Multi-Agent Path Finding & Self-Healing Fault Recovery</div>
+        <div class="brand-sub">Peer-to-Peer Contract Net Protocol (CNP) & Distributed Space-Time Coordination</div>
       </div>
     </div>
 
@@ -575,7 +603,7 @@
     <div class="tools-palette">
       <button class="tool-btn active" id="tool-inspect" onclick="setTool('inspect')">
         🔍
-        <span class="tooltip-text">Inspect (Hover / Click AMR or Racks)</span>
+        <span class="tooltip-text">Inspect (Hover or Click AMR to Toggle ON/OFF)</span>
       </button>
       <button class="tool-btn" id="tool-human" onclick="setTool('human')">
         👷
@@ -613,7 +641,7 @@
       </div>
       
       <div style="font-size:10.5px; color:#94a3b8; line-height:1.4;">
-        Selectively toggle individual AMRs <strong>ON</strong> or <strong>OFF</strong> to clear congestion, suspend robots, or resume paused deliveries.
+        Selectively toggle individual AMRs <strong>ON</strong> or <strong>OFF</strong> to regulate aisle traffic or resume paused deliveries.
       </div>
 
       <div style="display:flex; gap:6px;">
@@ -657,16 +685,26 @@
       </div>
       <div class="hud-row">
         <span class="hud-lbl">🤖 Active AMR Fleet:</span>
-        <span class="hud-val" id="kpi-fleet-health">8 / 8 Healthy</span>
+        <span class="hud-val" id="kpi-fleet-health">8 / 8 Active</span>
+      </div>
+
+      <!-- Decentralized Agent Mesh & CNP Auction Card -->
+      <div class="auction-card">
+        <div class="auction-header">
+          <span>📡 Decentralized Peer Auction (CNP)</span>
+        </div>
+        <div class="auction-msg" id="auction-msg">
+          Peer-to-peer radio mesh active. Bids computed autonomously on-robot.
+        </div>
       </div>
 
       <!-- Live Conflict Resolution Feed -->
       <div class="conflict-card" id="conflict-card">
         <div class="conflict-header">
-          <span>📡 Priority Arbiter Status</span>
+          <span>📡 Distributed Priority Status</span>
         </div>
         <div class="conflict-msg" id="conflict-msg">
-          Floor clear. All 8 AMRs coordinating via decentralized space-time reservations.
+          Corridors clear. Decentralized space-time navigation active.
         </div>
       </div>
     </div>
@@ -747,7 +785,10 @@
 
     const MAX_FLOORS = 5;
     const AMR_COUNT = 8;
-    const ROBOT_BASE_SPEED = 4.2; // Grid cells/sec at 1x
+    const ROBOT_BASE_SPEED = 4.2;
+
+    // Single-lane narrow vertical aisles (only 1 cell wide between solid rack pods)
+    const SINGLE_LANE_COLUMNS = new Set([7, 10, 13, 16, 19, 22, 32, 35, 38, 41, 44, 47, 58, 61, 64, 67, 70, 73]);
 
     let mapData = null;
     let rackMemory = {};
@@ -884,7 +925,7 @@
           gridX: bay.x,
           gridY: bay.y,
           heading: i < 4 ? Math.PI / 2 : -Math.PI / 2,
-          state: 'IDLE_CHARGING',
+          state: 'IDLE_CHARGING', // 'IDLE_CHARGING', 'MOVING_TO_PICKUP', 'LIFTING_CARGO', 'CARRYING_TO_RACK', 'DEPOSITING_CARGO', 'MOVING_TO_RETRIEVE', 'CARRYING_TO_BAY', 'RETURNING_HOME', 'HUMAN_SAFETY_STOP', 'YIELDING_POCKET', 'FAULT_STOPPED', 'RESCUING'
           battery: 100.0,
           cargo: null,
           currentTask: null,
@@ -893,11 +934,11 @@
           targetDesc: 'Parked at Fast Charger (100%)',
           isFaulted: false,
           faultReason: '',
-          isPoweredOff: false,      // ON / OFF power switch
+          isPoweredOff: false,
           isYielding: false,
-          yieldCooldown: 0,         // Cooldown timer to prevent yield spamming
-          stuckDuration: 0,         // Anti-stuck deadlock watchdog timer
-          pocketWaitTimer: 0,       // Time spent in yield pocket
+          yieldCooldown: 0,
+          stuckDuration: 0,
+          transferProgress: 0,
           lastX: bay.x,
           lastY: bay.y,
           safetyStopTimer: 0,
@@ -911,15 +952,16 @@
     // -------------------------------------------------------------
     // Pathfinding & Space-Time Collision Avoidance
     // -------------------------------------------------------------
-    function isCellWalkable(x, y, ignoreDynamic = false) {
+    function isCellWalkable(x, y, options = {}) {
       if (!mapData) return false;
       if (x < 0 || x >= mapData.width || y < 0 || y >= mapData.height) return false;
       if (mapData.grid[x][y] === 1) return false;
-      if (!ignoreDynamic && dynamicHazards.has(`${x},${y}`)) return false;
+      if (!options.ignoreDynamic && dynamicHazards.has(`${x},${y}`)) return false;
 
-      // Faulted or Powered-Off robots act as physical obstacles
-      if (!ignoreDynamic) {
+      // Obstacles include faulted or powered-off AMRs
+      if (!options.ignoreDynamic) {
         for (const bot of AMR_FLEET) {
+          if (options.ignoreBotId && bot.id === options.ignoreBotId) continue;
           if ((bot.isFaulted || bot.isPoweredOff) && bot.gridX === x && bot.gridY === y) {
             return false;
           }
@@ -943,7 +985,7 @@
 
     function findAStarPath(sx, sy, gx, gy, options = {}) {
       if (sx === gx && sy === gy) return [];
-      if (!isCellWalkable(gx, gy, options.ignoreDynamic)) {
+      if (!isCellWalkable(gx, gy, options)) {
         const access = getAccessPointForRack(gx, gy, sx, sy);
         if (!access) return [];
         gx = access.x; gy = access.y;
@@ -992,15 +1034,24 @@
           const ny = cy + dirs[i].dy;
 
           if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
-          if (!isCellWalkable(nx, ny, options.ignoreDynamic)) continue;
+          if (!isCellWalkable(nx, ny, options)) continue;
 
           const nIdx = ny * width + nx;
           let stepCost = 1.0;
 
-          // High aversion to walking directly past human workers
+          // High avoidance of human workers (safety envelope)
           for (const worker of humanWorkers) {
             const dist = Math.hypot(nx - worker.x, ny - worker.y);
-            if (dist <= 1.5) stepCost += 15.0;
+            if (dist <= 1.8) stepCost += 20.0;
+          }
+
+          // Gentle penalty for occupied cells by moving AMRs so paths naturally diverge
+          if (!options.ignoreBotCost) {
+            for (const other of AMR_FLEET) {
+              if (other.gridX === nx && other.gridY === ny) {
+                stepCost += 8.0;
+              }
+            }
           }
 
           const tentativeG = gScore[currentIdx] + stepCost;
@@ -1016,7 +1067,7 @@
     }
 
     // -------------------------------------------------------------
-    // Priority Evaluation & Conflict Arbitration
+    // Decentralized Contract Net Protocol (CNP) & Agent Bidding
     // -------------------------------------------------------------
     function getRobotPriority(robot) {
       if (!robot || robot.isPoweredOff) return 0;
@@ -1036,50 +1087,72 @@
       return score;
     }
 
-    function findNearestYieldPocket(robot) {
-      const x = robot.gridX, y = robot.gridY;
-      const candidates = [
-        { x, y: 24 }, { x, y: 25 }, { x, y: 4 }, { x, y: 45 },
-        { x: x - 1, y }, { x: x + 1, y }, { x, y: y - 1 }, { x, y: y + 1 }
-      ];
-      for (const pt of candidates) {
-        if (isCellWalkable(pt.x, pt.y)) return pt;
+    // Decentralized Peer-to-Peer Auction for Tasks
+    function conductDecentralizedAuction(task, tx, ty) {
+      let bestBid = Infinity;
+      let winningAmr = null;
+      const bids = [];
+
+      for (const bot of AMR_FLEET) {
+        if (bot.isFaulted || bot.isPoweredOff || bot.battery < 20) continue;
+        if (bot.state !== 'IDLE' && bot.state !== 'IDLE_CHARGING' && bot.state !== 'RETURNING_HOME') continue;
+
+        // Marginal cost function computed on the edge agent:
+        const dist = Math.abs(bot.gridX - tx) + Math.abs(bot.gridY - ty);
+        const batteryPenalty = (100 - bot.battery) * 0.35;
+        const bid = dist + batteryPenalty;
+        bids.push({ id: bot.id, bid: bid.toFixed(1) });
+
+        if (bid < bestBid) {
+          bestBid = bid;
+          winningAmr = bot;
+        }
       }
-      return null;
+
+      if (winningAmr) {
+        const taskId = task.parcel ? task.parcel.parcel_id : (task.orderId || 'BATCH');
+        const auctionMsg = document.getElementById('auction-msg');
+        if (auctionMsg) {
+          auctionMsg.innerHTML = `Consensus: <strong>${winningAmr.id}</strong> won <strong>${taskId}</strong> (Bid: ${bestBid.toFixed(1)} across ${bids.length} peers)`;
+        }
+        logTerminal('CNP AUCTION', 'tag-cnp', `📡 Peer auction for <strong>${taskId}</strong>: <strong>${winningAmr.id}</strong> awarded contract via distributed consensus.`);
+      }
+      return winningAmr;
     }
 
-    // Check Multi-Agent Traffic & Human Interlocks (With Cooldown to Prevent Freezing)
+    // -------------------------------------------------------------
+    // Bulletproof Non-Freezing Multi-Agent Conflict Arbitration
+    // -------------------------------------------------------------
     function arbitrateTraffic(robot, dt) {
       if (!isAiMode) return;
-      if (robot.isFaulted || robot.isPoweredOff || robot.state === 'IDLE_CHARGING' || robot.state === 'YIELDING_POCKET') return;
+      if (robot.isFaulted || robot.isPoweredOff || robot.state === 'IDLE_CHARGING' || robot.state === 'LIFTING_CARGO' || robot.state === 'DEPOSITING_CARGO') return;
 
-      // Handle yield cooldown
       if (robot.yieldCooldown > 0) {
         robot.yieldCooldown -= dt;
         return;
       }
 
-      // 1. Human Worker Safety Interlock (Absolute Priority)
+      // 1. Human Safety Interlock (Absolute Priority)
       for (const worker of humanWorkers) {
         const dist = Math.hypot(robot.x - worker.x, robot.y - worker.y);
         if (dist <= 2.2) {
           robot.state = 'HUMAN_SAFETY_STOP';
-          robot.targetDesc = `🛑 Safety Interlock: Human Worker (${worker.name})`;
+          robot.targetDesc = `🛑 Safety Stop: Human Worker (${worker.name})`;
           robot.safetyStopTimer += dt;
           kpiSafetyStops++;
           updateHudStats();
 
-          logConflict(`🛑 Safety Stop: <strong>${robot.id}</strong> halted for human <strong>${worker.name}</strong> at (${worker.x}, ${worker.y})`);
+          logConflict(`🛑 Safety Stop: <strong>${robot.id}</strong> halted for human <strong>${worker.name}</strong>`);
 
           if (robot.safetyStopTimer > 1.8 && robot.path.length > 0) {
             const goal = robot.path[robot.path.length - 1];
-            const detour = findAStarPath(robot.gridX, robot.gridY, goal.x, goal.y);
+            const detour = findAStarPath(robot.gridX, robot.gridY, goal.x, goal.y, { ignoreDynamic: false });
             if (detour.length > 0) {
               robot.path = detour;
               robot.pathIndex = 0;
               robot.state = robot.cargo ? 'CARRYING_TO_BAY' : 'MOVING_TO_PICKUP';
               robot.safetyStopTimer = 0;
-              logTerminal('SAFETY', 'tag-safety', `🔄 <strong>${robot.id}</strong> computed dynamic A* detour around human worker.`);
+              logTerminal('SAFETY', 'tag-safety', `🔄 <strong>${robot.id}</strong> computed dynamic A* detour around human.`);
             }
           }
           return;
@@ -1091,51 +1164,57 @@
         robot.safetyStopTimer = 0;
       }
 
-      // 2. AMR vs AMR Conflict Detection
       if (!robot.path || robot.pathIndex >= robot.path.length) return;
       const nextCell = robot.path[robot.pathIndex];
 
+      // 2. AMR vs AMR Multi-Agent Arbitration
       for (const other of AMR_FLEET) {
         if (other.id === robot.id || other.isFaulted || other.isPoweredOff || other.state === 'IDLE_CHARGING') continue;
 
-        // Check if other robot is moving directly into our cell or occupies next cell
+        const otherNext = (other.path && other.pathIndex < other.path.length) ? other.path[other.pathIndex] : null;
         const isOccupyingNext = (other.gridX === nextCell.x && other.gridY === nextCell.y);
-        let isHeadOn = false;
-
-        if (other.path && other.pathIndex < other.path.length) {
-          const otherNext = other.path[other.pathIndex];
-          if (otherNext.x === robot.gridX && otherNext.y === robot.gridY) {
-            isHeadOn = true;
-          }
-        }
+        const isHeadOn = otherNext && (otherNext.x === robot.gridX && otherNext.y === robot.gridY);
 
         if (isOccupyingNext || isHeadOn) {
           const myScore = getRobotPriority(robot);
           const otherScore = getRobotPriority(other);
 
-          if (myScore < otherScore) {
-            kpiYieldConflictsResolved++;
-            kpiCollisionsPrevented++;
-            updateHudStats();
+          // CASE A: Inside Single-Lane Narrow Aisle (Columns 7, 10, 13, 16, 19, 22, 32, 35...)
+          if (SINGLE_LANE_COLUMNS.has(robot.gridX) && robot.gridX === other.gridX) {
+            if (myScore < otherScore) {
+              // We yield by retreating AWAY from the approaching higher-priority AMR
+              kpiYieldConflictsResolved++;
+              kpiCollisionsPrevented++;
+              updateHudStats();
 
-            robot.isYielding = true;
-            robot.yieldCooldown = 3.0; // 3 second cooldown prevents infinite loop freezing
-            robot.pocketWaitTimer = 1.5;
-            robot.state = 'YIELDING_POCKET';
-            robot.targetDesc = `Yielding to ${other.id} [Priority: ${Math.round(otherScore)} vs ${Math.round(myScore)}]`;
+              robot.isYielding = true;
+              robot.yieldCooldown = 4.0;
+              robot.targetDesc = `Yielding to ${other.id} [Priority: ${Math.round(otherScore)} vs ${Math.round(myScore)}]`;
 
-            logConflict(`🔀 Priority Yield: <strong>${robot.id}</strong> (${Math.round(myScore)}) yields right-of-way to <strong>${other.id}</strong> (${Math.round(otherScore)})`);
-            logTerminal('PRIORITY', 'tag-yield', `🛑 <strong>${robot.id}</strong> stepped aside into pocket to let high-priority <strong>${other.id}</strong> pass.`);
+              logConflict(`🔀 Aisle Conflict: <strong>${robot.id}</strong> yielding right-of-way to <strong>${other.id}</strong>`);
+              logTerminal('PRIORITY', 'tag-yield', `🛑 <strong>${robot.id}</strong> reversing to aisle exit to let high-priority <strong>${other.id}</strong> pass.`);
 
-            const pocket = findNearestYieldPocket(robot);
-            if (pocket) {
-              robot.path = [pocket];
-              robot.pathIndex = 0;
+              // Determine retreat exit direction away from other bot
+              const isOtherNorth = other.gridY < robot.gridY;
+              const retreatY = isOtherNorth ? (robot.gridY <= 23 ? 24 : 46) : (robot.gridY <= 23 ? 4 : 25);
+              const retreatPath = findAStarPath(robot.gridX, robot.gridY, robot.gridX, retreatY, { ignoreDynamic: true });
+
+              if (retreatPath.length > 0) {
+                robot.path = retreatPath;
+                robot.pathIndex = 0;
+                robot.state = 'YIELDING_POCKET';
+              }
+              return;
             }
-            return;
-          } else {
-            // Higher priority robot maintains course; other robot will yield
-            return;
+          } 
+          // CASE B: Open Corridors / Cross-Aisles (y=23..26 or perimeter)
+          else {
+            if (myScore < otherScore) {
+              // Pause or sidestep 1 cell
+              robot.yieldCooldown = 1.5;
+              // Simply wait in place for other to clear cell
+              return;
+            }
           }
         }
       }
@@ -1150,7 +1229,6 @@
       robot.stuckDuration = 0;
       robot.isYielding = false;
       robot.yieldCooldown = 1.0;
-      robot.pocketWaitTimer = 0;
 
       if (robot.currentTask) {
         robot.state = robot.cargo ? 'CARRYING_TO_BAY' : (robot.state === 'MOVING_TO_RETRIEVE' ? 'MOVING_TO_RETRIEVE' : 'MOVING_TO_PICKUP');
@@ -1160,13 +1238,14 @@
         } else if (robot.currentTask.dockX !== undefined) {
           gx = robot.currentTask.dockX; gy = robot.currentTask.dockY;
         }
-        robot.path = findAStarPath(robot.gridX, robot.gridY, gx, gy);
+        // Force path recalculation with high aversion to current bottleneck
+        robot.path = findAStarPath(robot.gridX, robot.gridY, gx, gy, { ignoreBotCost: false });
         robot.pathIndex = 0;
       } else {
         robot.state = 'IDLE';
         dispatchFleet();
       }
-      logTerminal('UNSTICK', 'tag-system', `⚡ <strong>${robot.id}</strong> unblocked and recalculated route.`);
+      logTerminal('UNSTICK', 'tag-system', `⚡ <strong>${robot.id}</strong> auto-unblocked and recalculated route.`);
     }
 
     function unstickAllRobots() {
@@ -1179,7 +1258,7 @@
     }
 
     // -------------------------------------------------------------
-    // AMR Power ON / OFF Controls (Requested Feature)
+    // AMR Power ON / OFF Controls
     // -------------------------------------------------------------
     function toggleRobotPower(robotId) {
       const robot = AMR_FLEET.find(r => r.id === robotId);
@@ -1238,6 +1317,7 @@
         else if (isFault) { badgeColor = '#ef4444'; badgeText = 'FAULTED'; }
         else if (r.state === 'IDLE_CHARGING') { badgeColor = '#22c55e'; badgeText = 'CHARGING'; }
         else if (r.state === 'YIELDING_POCKET') { badgeColor = '#f59e0b'; badgeText = 'YIELDING'; }
+        else if (r.state === 'LIFTING_CARGO' || r.state === 'DEPOSITING_CARGO') { badgeColor = '#38bdf8'; badgeText = 'LIFTING'; }
 
         return `
           <div class="fleet-card-item ${isOff ? 'powered-off' : ''}">
@@ -1262,20 +1342,8 @@
     }
 
     // -------------------------------------------------------------
-    // Task Dispatcher & Autonomous Handoff (Self-Healing)
+    // Decentralized Task Dispatcher & Physical Lift Animations
     // -------------------------------------------------------------
-    function getClosestFreeRobot(tx, ty) {
-      let best = null, bestDist = Infinity;
-      for (const bot of AMR_FLEET) {
-        if (bot.isFaulted || bot.isPoweredOff || bot.battery < 20) continue;
-        if (bot.state === 'IDLE' || bot.state === 'IDLE_CHARGING' || bot.state === 'RETURNING_HOME') {
-          const dist = Math.abs(bot.gridX - tx) + Math.abs(bot.gridY - ty);
-          if (dist < bestDist) { bestDist = dist; best = bot; }
-        }
-      }
-      return best;
-    }
-
     function dispatchFleet() {
       while (inboundTasks.length > 0 || outboundTasks.length > 0) {
         let task = null, tx = 0, ty = 0;
@@ -1290,7 +1358,8 @@
           task = inboundTasks[0]; tx = task.dockX; ty = task.dockY;
         }
 
-        const robot = getClosestFreeRobot(tx, ty);
+        // Conduct decentralized auction among peer agents
+        const robot = conductDecentralizedAuction(task, tx, ty);
         if (!robot) break;
 
         if (task.type === 'INBOUND') {
@@ -1339,48 +1408,76 @@
         const task = robot.currentTask;
         if (!task) { robot.state = 'IDLE'; dispatchFleet(); return; }
 
-        const q = inboundQueues[task.dockId];
-        if (q) {
-          const idx = q.findIndex(p => p.parcel_id === task.parcel.parcel_id);
-          if (idx !== -1) q.splice(idx, 1);
-        }
+        // Start Physical Lift Animation (0.4s)
+        robot.state = 'LIFTING_CARGO';
+        robot.transferProgress = 0.0;
+        robot.targetDesc = `Lifting parcel ${task.parcel.parcel_id} from ${task.dockId}...`;
 
-        robot.cargo = task.parcel;
-        robot.state = 'CARRYING_TO_RACK';
-        robot.targetDesc = `Shelving at Rack (${task.rackSlot.rack.x},${task.rackSlot.rack.y}) L${task.rackSlot.floorNum}`;
+        setTimeout(() => {
+          if (robot.isPoweredOff || robot.isFaulted) return;
+          const q = inboundQueues[task.dockId];
+          if (q) {
+            const idx = q.findIndex(p => p.parcel_id === task.parcel.parcel_id);
+            if (idx !== -1) q.splice(idx, 1);
+          }
 
-        logTerminal('PICKUP', 'tag-inbound', `🤖 <strong>${robot.id}</strong> loaded <strong>${task.parcel.parcel_id}</strong> [${task.parcel.priority}] from ${task.dockId}. Transporting to 3D Rack.`);
+          robot.cargo = task.parcel;
+          robot.state = 'CARRYING_TO_RACK';
+          robot.targetDesc = `Shelving at Rack (${task.rackSlot.rack.x},${task.rackSlot.rack.y}) L${task.rackSlot.floorNum}`;
 
-        const access = getAccessPointForRack(task.rackSlot.rack.x, task.rackSlot.rack.y, robot.gridX, robot.gridY);
-        if (access) {
-          robot.path = findAStarPath(robot.gridX, robot.gridY, access.x, access.y);
-          robot.pathIndex = 0;
-        } else {
-          robot.state = 'IDLE'; dispatchFleet();
-        }
+          logTerminal('PICKUP', 'tag-inbound', `🤖 <strong>${robot.id}</strong> completed lift of <strong>${task.parcel.parcel_id}</strong> [${task.parcel.priority}]. En route to 3D Rack.`);
+
+          const access = getAccessPointForRack(task.rackSlot.rack.x, task.rackSlot.rack.y, robot.gridX, robot.gridY);
+          if (access) {
+            robot.path = findAStarPath(robot.gridX, robot.gridY, access.x, access.y);
+            robot.pathIndex = 0;
+          } else {
+            robot.state = 'IDLE'; dispatchFleet();
+          }
+          render();
+        }, 400);
+
       } else if (robot.state === 'CARRYING_TO_RACK') {
         const task = robot.currentTask;
-        if (task && task.rackSlot) {
+        if (!task || !task.rackSlot) { robot.state = 'IDLE'; dispatchFleet(); return; }
+
+        // Start Shelving Animation (0.4s)
+        robot.state = 'DEPOSITING_CARGO';
+        robot.targetDesc = `Shelving into Rack Tier ${task.rackSlot.floorNum}...`;
+
+        setTimeout(() => {
+          if (robot.isPoweredOff || robot.isFaulted) return;
           task.rackSlot.rack.floors[task.rackSlot.floorIndex] = task.parcel;
-          logTerminal('SHELVING', 'tag-complete', `📥 <strong>${robot.id}</strong> placed <strong>${task.parcel.parcel_id}</strong> at Rack (${task.rackSlot.rack.x}, ${task.rackSlot.rack.y}) Tier ${task.rackSlot.floorNum}`);
-        }
-        robot.cargo = null;
-        robot.currentTask = null;
-        robot.state = 'IDLE';
-        dispatchFleet();
+          logTerminal('SHELVING', 'tag-complete', `📥 <strong>${robot.id}</strong> stored <strong>${task.parcel.parcel_id}</strong> at Rack (${task.rackSlot.rack.x}, ${task.rackSlot.rack.y}) Tier ${task.rackSlot.floorNum}`);
+          robot.cargo = null;
+          robot.currentTask = null;
+          robot.state = 'IDLE';
+          dispatchFleet();
+          render();
+        }, 400);
+
       } else if (robot.state === 'MOVING_TO_RETRIEVE') {
         const task = robot.currentTask;
         if (!task) { robot.state = 'IDLE'; dispatchFleet(); return; }
 
-        task.rack.floors[task.floorIndex] = null;
-        robot.cargo = task.parcel;
-        robot.state = 'CARRYING_TO_BAY';
-        robot.targetDesc = `Delivering to Bay ${task.bayId}`;
+        // Start Retrieval Lift Animation (0.4s)
+        robot.state = 'LIFTING_CARGO';
+        robot.targetDesc = `Retrieving parcel from Tier ${task.floorNum}...`;
 
-        logTerminal('RETRIEVE', 'tag-outbound', `🤖 <strong>${robot.id}</strong> retrieved <strong>${task.parcel.parcel_id}</strong>. Carrying to ${task.bayId}`);
+        setTimeout(() => {
+          if (robot.isPoweredOff || robot.isFaulted) return;
+          task.rack.floors[task.floorIndex] = null; // SLOT BECOMES EMPTY WIREFRAME BRACKET
+          robot.cargo = task.parcel;
+          robot.state = 'CARRYING_TO_BAY';
+          robot.targetDesc = `Delivering to Bay ${task.bayId}`;
 
-        robot.path = findAStarPath(robot.gridX, robot.gridY, task.bayX, task.bayY);
-        robot.pathIndex = 0;
+          logTerminal('RETRIEVE', 'tag-outbound', `🤖 <strong>${robot.id}</strong> retrieved <strong>${task.parcel.parcel_id}</strong> from shelf. Carrying to ${task.bayId}`);
+
+          robot.path = findAStarPath(robot.gridX, robot.gridY, task.bayX, task.bayY);
+          robot.pathIndex = 0;
+          render();
+        }, 400);
+
       } else if (robot.state === 'CARRYING_TO_BAY') {
         const task = robot.currentTask;
         if (task) {
@@ -1403,6 +1500,10 @@
         robot.path = [];
       } else if (robot.state === 'RESCUING') {
         completeRescueHandoff(robot);
+      } else if (robot.state === 'YIELDING_POCKET') {
+        // Exited pocket; resume original task
+        robot.isYielding = false;
+        unstickRobot(robot);
       }
     }
 
@@ -1431,9 +1532,12 @@
     function initiateTaskRescueHandoff(faultedBot) {
       logTerminal('RESCUE', 'tag-rescue', `🔄 <strong>AUTONOMOUS FLEET RESCUE:</strong> Dispatching surrogate AMR to take over ${faultedBot.id}'s mission.`);
 
-      let surrogate = getClosestFreeRobot(faultedBot.gridX, faultedBot.gridY);
-      if (!surrogate) {
-        surrogate = AMR_FLEET.filter(r => !r.isFaulted && !r.isPoweredOff && r.id !== faultedBot.id)[0];
+      let surrogate = null;
+      let bestDist = Infinity;
+      for (const bot of AMR_FLEET) {
+        if (bot.isFaulted || bot.isPoweredOff || bot.battery < 20 || bot.id === faultedBot.id) continue;
+        const d = Math.abs(bot.gridX - faultedBot.gridX) + Math.abs(bot.gridY - faultedBot.gridY);
+        if (d < bestDist) { bestDist = d; surrogate = bot; }
       }
 
       if (surrogate) {
@@ -1513,13 +1617,9 @@
           }
         }
 
-        // Handle Yielding Pocket Wait timer
-        if (robot.state === 'YIELDING_POCKET') {
-          robot.pocketWaitTimer -= dt;
-          if (robot.pocketWaitTimer <= 0) {
-            robot.isYielding = false;
-            unstickRobot(robot);
-          }
+        // Skip movement during physical cargo lift animations
+        if (robot.state === 'LIFTING_CARGO' || robot.state === 'DEPOSITING_CARGO') {
+          robot.transferProgress = Math.min(1.0, (robot.transferProgress || 0) + dt * 2.5);
           continue;
         }
 
@@ -1527,12 +1627,12 @@
         arbitrateTraffic(robot, dt);
         if (robot.state === 'HUMAN_SAFETY_STOP') continue;
 
-        // Deadlock Watchdog: Detect stationary blocked robots & auto-unstick
+        // Deadlock Watchdog: Detect stationary blocked robots & auto-unstick after 1.8s
         if (robot.path && robot.path.length > 0 && robot.state !== 'IDLE_CHARGING') {
           const moveDist = Math.hypot(robot.x - (robot.lastX || robot.x), robot.y - (robot.lastY || robot.y));
           if (moveDist < 0.04) {
             robot.stuckDuration = (robot.stuckDuration || 0) + dt;
-            if (robot.stuckDuration > 2.0) {
+            if (robot.stuckDuration > 1.8) {
               unstickRobot(robot);
             }
           } else {
@@ -1589,7 +1689,7 @@
     }
 
     // -------------------------------------------------------------
-    // Canvas Drawing & Visual Elements
+    // Canvas Drawing & High-Fidelity Empty Slot Graphics
     // -------------------------------------------------------------
     function render() {
       if (!mapData) return;
@@ -1613,7 +1713,7 @@
         ctx.beginPath(); ctx.moveTo(0, y * cellSize); ctx.lineTo(mapData.width * cellSize, y * cellSize); ctx.stroke();
       }
 
-      // 2. Storage Racks
+      // 2. Storage Racks with Distinct 5-Tier Empty Slot Design
       for (let x = 0; x < mapData.width; x++) {
         for (let y = 0; y < mapData.height; y++) {
           if (mapData.grid[x][y] === 1) {
@@ -1624,18 +1724,37 @@
             } else {
               const rack = rackMemory[`${x},${y}`];
               const occCount = rack ? rack.floors.filter(f => f !== null).length : 0;
-              ctx.fillStyle = occCount === 5 ? '#1c1917' : (occCount > 0 ? '#111827' : '#151821');
+              
+              // Dark industrial shelf bay background
+              ctx.fillStyle = occCount === 5 ? '#1a181b' : '#111622';
               ctx.fillRect(x * cellSize + 0.5, y * cellSize + 0.5, cellSize - 1, cellSize - 1);
 
-              ctx.strokeStyle = occCount === 5 ? '#f59e0b' : (occCount > 0 ? '#38bdf8' : '#282d37');
+              ctx.strokeStyle = occCount === 5 ? '#f59e0b' : (occCount > 0 ? '#38bdf8' : '#232b3b');
               ctx.lineWidth = occCount === 5 ? 1.5 : 1;
               ctx.strokeRect(x * cellSize + 1, y * cellSize + 1, cellSize - 2, cellSize - 2);
 
-              if (cellSize >= 14 && occCount > 0) {
-                const pipW = (cellSize - 4) / 5;
-                for (let f = 0; f < occCount; f++) {
-                  ctx.fillStyle = occCount === 5 ? '#facc15' : '#38bdf8';
-                  ctx.fillRect(x * cellSize + 2 + f * pipW, y * cellSize + cellSize - 3.5, pipW - 1, 2);
+              // Render individual 5 vertical tiers (Empty wireframe brackets vs Solid parcels)
+              if (cellSize >= 12 && rack) {
+                const tierH = (cellSize - 4) / 5;
+                for (let f = 0; f < 5; f++) {
+                  const floorItem = rack.floors[f];
+                  const ty = y * cellSize + 2 + (4 - f) * tierH; // Floor 1 at bottom, Floor 5 at top
+
+                  if (floorItem) {
+                    // FILLED TIER SLOT: Colorful parcel crate with SKU color
+                    ctx.fillStyle = rack.categoryColor || '#38bdf8';
+                    ctx.fillRect(x * cellSize + 2.5, ty + 0.5, cellSize - 5, tierH - 1);
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 0.5;
+                    ctx.strokeRect(x * cellSize + 2.5, ty + 0.5, cellSize - 5, tierH - 1);
+                  } else {
+                    // EMPTY TIER SLOT: Recessed empty wireframe bracket [ · ]
+                    ctx.fillStyle = '#0b0f19';
+                    ctx.fillRect(x * cellSize + 2.5, ty + 0.5, cellSize - 5, tierH - 1);
+                    ctx.strokeStyle = 'rgba(56, 189, 248, 0.18)';
+                    ctx.lineWidth = 0.5;
+                    ctx.strokeRect(x * cellSize + 3, ty + 1, cellSize - 6, tierH - 2);
+                  }
                 }
               }
             }
@@ -1659,7 +1778,7 @@
         ctx.fillText('⚠️', sx + cellSize / 2, sy + cellSize / 2);
       }
 
-      // 4. Functional Stations
+      // 4. Functional Stations with Marked Pallet Loading Slots
       for (const st of Object.values(mapData.stations)) {
         const sx = st.x * cellSize, sy = st.y * cellSize;
         if (st.type === 'charging' || st.id.startsWith('CH')) {
@@ -1693,7 +1812,30 @@
         }
       }
 
-      // 5. Human Workers
+      // 5. Decentralized Peer-to-Peer Mesh Network Overlay (Radio links)
+      if (isAiMode && cellSize >= 10) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(168, 85, 247, 0.15)';
+        ctx.lineWidth = 0.8;
+        ctx.setLineDash([3, 5]);
+        for (let i = 0; i < AMR_FLEET.length; i++) {
+          for (let j = i + 1; j < AMR_FLEET.length; j++) {
+            const b1 = AMR_FLEET[i], b2 = AMR_FLEET[j];
+            if (!b1.isFaulted && !b1.isPoweredOff && !b2.isFaulted && !b2.isPoweredOff) {
+              const d = Math.hypot(b1.x - b2.x, b1.y - b2.y);
+              if (d <= 25) { // Within peer radio range
+                ctx.beginPath();
+                ctx.moveTo((b1.x + 0.5) * cellSize, (b1.y + 0.5) * cellSize);
+                ctx.lineTo((b2.x + 0.5) * cellSize, (b2.y + 0.5) * cellSize);
+                ctx.stroke();
+              }
+            }
+          }
+        }
+        ctx.restore();
+      }
+
+      // 6. Human Workers
       for (const worker of humanWorkers) {
         const wx = (worker.x + 0.5) * cellSize;
         const wy = (worker.y + 0.5) * cellSize;
@@ -1720,7 +1862,7 @@
         ctx.fillText('👷', wx, wy);
       }
 
-      // 6. AMR Robot Fleet (8 Units)
+      // 7. AMR Robot Fleet (8 Units)
       for (const r of AMR_FLEET) {
         drawRobot(ctx, r, cellSize);
       }
@@ -1745,6 +1887,20 @@
         ctx.lineWidth = Math.max(1.2, cellSize * 0.08);
         ctx.setLineDash([4, 4]);
         ctx.stroke();
+        ctx.restore();
+      }
+
+      // Animated Physical Lift Beam when taking or depositing parcels
+      if (r.state === 'LIFTING_CARGO' || r.state === 'DEPOSITING_CARGO') {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * 1.8, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
+        ctx.fill();
         ctx.restore();
       }
 
@@ -1783,6 +1939,9 @@
       } else if (r.cargo && r.cargo.priority === 'URGENT') {
         ringColor = '#a855f7';
         glowColor = 'rgba(168, 85, 247, 0.8)';
+      } else if (r.state === 'LIFTING_CARGO' || r.state === 'DEPOSITING_CARGO') {
+        ringColor = '#facc15';
+        glowColor = 'rgba(250, 204, 21, 0.8)';
       }
 
       ctx.shadowColor = glowColor;
@@ -1814,7 +1973,7 @@
         ctx.restore();
       }
 
-      // Center Icon or Cargo Box
+      // Center Icon or 3D Cargo Box
       if (r.isPoweredOff) {
         ctx.fillStyle = '#ef4444';
         ctx.font = `bold ${Math.max(9, radius * 0.85)}px monospace`;
@@ -1825,6 +1984,11 @@
         ctx.font = `bold ${Math.max(9, radius * 0.95)}px monospace`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText('⚠️', 0, 0);
+      } else if (r.state === 'LIFTING_CARGO' || r.state === 'DEPOSITING_CARGO') {
+        ctx.fillStyle = '#facc15';
+        ctx.font = `bold ${Math.max(8, radius * 0.75)}px monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('⚙️', 0, 0);
       } else if (r.cargo) {
         const boxSize = radius * 1.15;
         const half = boxSize / 2;
@@ -2064,7 +2228,7 @@
       if (isAiMode) {
         btn.classList.add('btn-primary'); btn.classList.remove('btn-danger');
         lbl.innerText = 'Mode: Edge-AI MAPF';
-        badge.innerText = 'AI MAPF ENGINE: ACTIVE';
+        badge.innerText = 'AI MAPF ACTIVE';
         badge.style.color = '#38bdf8';
         logTerminal('AI MODE', 'tag-system', '⚡ <strong>Edge-AI MAPF Active:</strong> Space-time reservations, dynamic yielding, and self-healing fleet enabled.');
       } else {
@@ -2338,7 +2502,7 @@
       resetView();
 
       logTerminal('STARTUP', 'tag-complete', '🚀 Edge-AI AMR Fleet Visualizer Online | SIH 2026 Edition');
-      logTerminal('MAPF', 'tag-system', 'Decentralized Conflict Avoidance & Self-Healing Fault Recovery Active.');
+      logTerminal('MAPF', 'tag-system', 'Decentralized Peer-to-Peer CNP & Multi-Agent Space-Time Coordination Active.');
 
       setInterval(triggerInboundShipment, 12000);
       setInterval(triggerOutboundOrder, 15000);
