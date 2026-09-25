@@ -1180,7 +1180,7 @@
         // If charging at station, stay until replenished to at least 85%
         if (bot.state === 'IDLE_CHARGING' && bot.battery < 85) continue;
         // If returning home with low battery, do not divert
-        if (bot.state === 'RETURNING_HOME' && bot.battery <= 40) continue;
+        if (bot.state === 'RETURNING_HOME' && bot.battery <= 25) continue;
         // Only idle, sufficiently-charged docking, or returning-home robots can bid
         if (bot.state !== 'IDLE' && bot.state !== 'IDLE_CHARGING' && bot.state !== 'RETURNING_HOME') continue;
 
@@ -1738,8 +1738,11 @@
             robot.targetDesc = `Parked at Fast Charger (${Math.round(robot.battery)}%)`;
             robot.path = [];
           } else {
-            // Healthy battery (> 25%): Stay in standby in the field ready for immediate task assignment!
-            robot.targetDesc = 'Standby (Awaiting Tasks)';
+            // Vacate narrow storage aisles / bays and smoothly return towards home base
+            robot.state = 'RETURNING_HOME';
+            robot.targetDesc = `Returning to Base (${robot.homeBayId})`;
+            robot.path = findAStarPath(robot.gridX, robot.gridY, robot.homeX, robot.homeY);
+            robot.pathIndex = 0;
           }
         }
       }
@@ -1769,6 +1772,8 @@
 
           robot.cargo = task.parcel;
           robot.state = 'CARRYING_TO_RACK';
+          // Mark dock as vacated so peer AMRs can visit this dock immediately!
+          task.dockId = null;
           robot.targetDesc = `Shelving at Rack (${task.rackSlot.rack.x},${task.rackSlot.rack.y}) L${task.rackSlot.floorNum}`;
 
           logTerminal('PICKUP', 'tag-inbound', `🤖 <strong>${robot.id}</strong> completed lift of <strong>${task.parcel.parcel_id}</strong> [${task.parcel.priority}]. En route to 3D Rack.`);
@@ -1778,8 +1783,9 @@
             robot.path = findAStarPath(robot.gridX, robot.gridY, access.x, access.y);
             robot.pathIndex = 0;
           } else {
-            robot.state = 'IDLE'; dispatchFleet();
+            robot.state = 'IDLE';
           }
+          dispatchFleet();
           render();
         }, 400);
 
@@ -1800,16 +1806,20 @@
           logTerminal('SHELVING', 'tag-complete', `📥 <strong>${robot.id}</strong> stored <strong>${task.parcel.parcel_id}</strong> at Rack (${task.rackSlot.rack.x}, ${task.rackSlot.rack.y}) Tier ${task.rackSlot.floorNum}`);
           robot.cargo = null;
           robot.currentTask = null;
-          if (robot.battery <= 25) {
+          robot.state = 'IDLE';
+
+          dispatchFleet();
+
+          // CRITICAL: NEVER remain stationary inside narrow rack aisles!
+          // If no new task was assigned, immediately vacate the aisle and return to home base!
+          if (robot.state === 'IDLE') {
             robot.state = 'RETURNING_HOME';
-            robot.targetDesc = `Low Battery (${Math.round(robot.battery)}%): Returning to Charger`;
+            robot.targetDesc = (robot.battery <= 25)
+              ? `Low Battery (${Math.round(robot.battery)}%): Returning to Charger`
+              : `Cleared rack: Returning to Base (${robot.homeBayId})`;
             robot.path = findAStarPath(robot.gridX, robot.gridY, robot.homeX, robot.homeY);
             robot.pathIndex = 0;
-            logTerminal('BATTERY', 'tag-yield', `🔋 <strong>${robot.id}</strong> stored parcel. Low battery (${Math.round(robot.battery)}%), returning to ${robot.homeBayId} to recharge.`);
-          } else {
-            robot.state = 'IDLE';
-            robot.targetDesc = 'Standby (Awaiting Tasks)';
-            dispatchFleet();
+            logTerminal('FLEET', 'tag-system', `🤖 <strong>${robot.id}</strong> finished shelving. Vacating rack aisle towards ${robot.homeBayId}.`);
           }
           render();
         }, 400);
@@ -1854,16 +1864,19 @@
         }
         robot.cargo = null;
         robot.currentTask = null;
-        if (robot.battery <= 25) {
+        robot.state = 'IDLE';
+
+        dispatchFleet();
+
+        // If no new task was immediately assigned, vacate outbound bay towards home base
+        if (robot.state === 'IDLE') {
           robot.state = 'RETURNING_HOME';
-          robot.targetDesc = `Low Battery (${Math.round(robot.battery)}%): Returning to Charger`;
+          robot.targetDesc = (robot.battery <= 25)
+            ? `Low Battery (${Math.round(robot.battery)}%): Returning to Charger`
+            : `Order complete: Returning to ${robot.homeBayId}`;
           robot.path = findAStarPath(robot.gridX, robot.gridY, robot.homeX, robot.homeY);
           robot.pathIndex = 0;
-          logTerminal('BATTERY', 'tag-yield', `🔋 <strong>${robot.id}</strong> completed outbound order. Low battery (${Math.round(robot.battery)}%), returning to ${robot.homeBayId} to recharge.`);
-        } else {
-          robot.state = 'IDLE';
-          robot.targetDesc = 'Standby (Awaiting Tasks)';
-          dispatchFleet();
+          logTerminal('FLEET', 'tag-system', `🤖 <strong>${robot.id}</strong> finished outbound delivery. Vacating bay towards ${robot.homeBayId}.`);
         }
       } else if (robot.state === 'RETURNING_HOME') {
         robot.state = 'IDLE_CHARGING';
