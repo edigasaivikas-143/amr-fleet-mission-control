@@ -149,13 +149,15 @@ Open your browser and navigate to:
 
 ## 🎮 Interactive Manual Controls for Evaluators
 
-On the left tool palette:
-* 🔍 **Inspect**: Hover over any 3D storage rack to see all 5 floor tiers, or hover over an AMR to view speed, battery, heading, and cargo.
+On the left tool palette and management drawer:
+* 🔍 **Inspect**: Hover over any 3D storage rack to see all 5 floor tiers, or hover over an AMR to view speed, battery, heading, and cargo. Click an AMR to toggle Power ON/OFF.
+* 🛑 **Fleet Power Switchboard**: Open the Fleet Management drawer or use top toolbar buttons to selectively power ON/OFF individual AMRs or trigger master unstick routines.
 * 👷 **Place Human**: Click anywhere on the floor to drop a human worker with a safety radar zone. Watch AMRs brake and recalculate detours.
 * 🚧 **Place Hazard**: Click an aisle to simulate an aisle blockage or fallen box.
 * 💥 **Fail Bot**: Click any active robot to cause a simulated hardware drive stall. Watch the fleet automatically dispatch a surrogate AMR to rescue its cargo!
-* ⚡ **Drain Battery**: Click any AMR to drain its battery to 5% and trigger the emergency charging protocol.
+* ⚡ **Drain Battery**: Click any AMR to drain its battery to 0% (Charged-Out Takeover) and trigger autonomous peer rescue protocol.
 * 🔧 **Repair AMR**: Click on a faulted robot to complete diagnostic reset and return it to service.
+* 📦 **Instant Slot Vacancy**: When an AMR retrieves a parcel from a 3D rack tier, the slot immediately vacates into an empty recessed wireframe bracket `[ · ]`, and the retrieved parcel is permanently locked to that AMR deck.
 
 ---
 

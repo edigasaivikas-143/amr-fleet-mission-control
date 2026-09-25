@@ -886,7 +886,9 @@
               categorySku: cat.sku,
               categoryName: cat.name,
               categoryColor: cat.color,
-              floors: Array(MAX_FLOORS).fill(null)
+              floors: Array(MAX_FLOORS).fill(null),
+              reservedInbound: new Set(),
+              reservedOutbound: new Set()
             };
           }
         }
@@ -1061,15 +1063,6 @@
             if (dist <= 1.8) stepCost += 20.0;
           }
 
-          // Gentle penalty for occupied cells by moving AMRs so paths naturally diverge
-          if (!options.ignoreBotCost) {
-            for (const other of AMR_FLEET) {
-              if (other.gridX === nx && other.gridY === ny) {
-                stepCost += 8.0;
-              }
-            }
-          }
-
           const tentativeG = gScore[currentIdx] + stepCost;
           if (tentativeG < gScore[nIdx]) {
             cameFrom[nIdx] = currentIdx;
@@ -1191,7 +1184,7 @@
         const otherNext = (other.path && other.pathIndex < other.path.length) ? other.path[other.pathIndex] : null;
         const distToOther = Math.hypot(robot.x - other.x, robot.y - other.y);
 
-        // A. Hard Proximity Bubble Check (Continuous Distance)
+        // A. Hard Proximity Bubble Check (Continuous Distance & Convoy Buffer)
         // If within 1.35 cells, check if advancing moves closer to other
         if (distToOther < 1.35) {
           const dxToOther = other.x - robot.x;
@@ -1201,17 +1194,15 @@
           const dot = dxToOther * targetDx + dyToOther * targetDy;
 
           if (dot > 0.05) {
-            if (myScore < otherScore || (myScore === otherScore && robot.id > other.id)) {
-              robot.targetDesc = `Safety Hold: Proximity to ${other.id}`;
-              kpiCollisionsPrevented++;
-              updateHudStats();
-              return false; // HOLD POSITION
-            }
+            robot.targetDesc = `Safety Hold: Proximity to ${other.id}`;
+            kpiCollisionsPrevented++;
+            updateHudStats();
+            return false; // HOLD POSITION
           }
         }
 
         // B. Target Cell Currently Occupied (Rear-End / Tail-gating Prevention)
-        const isTargetOccupied = Math.hypot(other.x - nextCell.x, other.y - nextCell.y) < 0.85;
+        const isTargetOccupied = Math.hypot(other.x - nextCell.x, other.y - nextCell.y) < 0.95;
         if (isTargetOccupied) {
           robot.targetDesc = `Hold: Waiting for ${other.id} to clear (${nextCell.x},${nextCell.y})`;
           return false; // HOLD POSITION
@@ -1241,12 +1232,18 @@
           }
         }
 
-        // D. Head-On / Swap Conflict (A targeting B's cell AND B targeting A's cell)
-        const isHeadOn = otherNext && (otherNext.x === robot.gridX && otherNext.y === robot.gridY) && (other.gridX === nextCell.x && other.gridY === nextCell.y);
-        if (isHeadOn) {
-          if (myScore < otherScore || (myScore === otherScore && robot.id > other.id)) {
-            // Inside narrow single-lane aisle
-            if (SINGLE_LANE_COLUMNS.has(robot.gridX) && robot.gridX === other.gridX) {
+        // D. SINGLE-LANE AISLE HEAD-ON PREEMPTION (Columns in SINGLE_LANE_COLUMNS)
+        if (SINGLE_LANE_COLUMNS.has(robot.gridX) && other.gridX === robot.gridX) {
+          const isMeHeadingSouth = nextCell.y > robot.gridY;
+          const isOtherHeadingNorth = otherNext && otherNext.y < other.gridY;
+          const isMeHeadingNorth = nextCell.y < robot.gridY;
+          const isOtherHeadingSouth = otherNext && otherNext.y > other.gridY;
+
+          const isOpposingTraffic = (isMeHeadingSouth && isOtherHeadingNorth && robot.gridY < other.gridY) ||
+                                    (isMeHeadingNorth && isOtherHeadingSouth && robot.gridY > other.gridY);
+
+          if (isOpposingTraffic || (otherNext && otherNext.y === robot.gridY)) {
+            if (myScore < otherScore || (myScore === otherScore && robot.id > other.id)) {
               if (robot.state !== 'YIELDING_POCKET') {
                 const isOtherNorth = other.gridY < robot.gridY;
                 const retreatY = isOtherNorth ? (robot.gridY <= 23 ? 24 : 46) : (robot.gridY <= 23 ? 4 : 25);
@@ -1255,7 +1252,8 @@
                   robot.path = retreatPath;
                   robot.pathIndex = 0;
                   robot.state = 'YIELDING_POCKET';
-                  robot.targetDesc = `Reversing out of aisle for ${other.id}`;
+                  robot.yieldTargetId = other.id;
+                  robot.targetDesc = `Yielding single-lane aisle ${robot.gridX} to ${other.id}`;
                   logConflict(`🔀 Aisle Conflict: <strong>${robot.id}</strong> yielding right-of-way to <strong>${other.id}</strong>`);
                   logTerminal('PRIORITY', 'tag-yield', `🛑 <strong>${robot.id}</strong> reversing to aisle exit to let high-priority <strong>${other.id}</strong> pass.`);
                   kpiYieldConflictsResolved++;
@@ -1265,10 +1263,18 @@
               }
               return true; // Let it advance backwards along retreatPath
             } else {
-              // Open area: hold position
-              robot.targetDesc = `Yielding lane to ${other.id}`;
-              return false;
+              // Higher-priority robot continues forward smoothly
+              return true;
             }
+          }
+        }
+
+        // E. Open Corridor Head-On / Swap Conflict
+        const isHeadOn = otherNext && (otherNext.x === robot.gridX && otherNext.y === robot.gridY) && (other.gridX === nextCell.x && other.gridY === nextCell.y);
+        if (isHeadOn) {
+          if (myScore < otherScore || (myScore === otherScore && robot.id > other.id)) {
+            robot.targetDesc = `Yielding lane to ${other.id}`;
+            return false; // Hold until other clears
           }
         }
       }
@@ -1427,32 +1433,42 @@
     // -------------------------------------------------------------
     function dispatchFleet() {
       while (inboundTasks.length > 0 || outboundTasks.length > 0) {
-        let task = null, tx = 0, ty = 0;
-        if (inboundTasks.length > 0 && (outboundTasks.length === 0 || Math.random() > 0.5)) {
-          task = inboundTasks[0]; tx = task.dockX; ty = task.dockY;
-        } else if (outboundTasks.length > 0) {
-          task = outboundTasks[0];
+        let task = null, taskQueue = null, taskIdx = -1, tx = 0, ty = 0;
+
+        // Find next eligible inbound task whose dock is NOT currently being visited by another robot
+        const inIdx = inboundTasks.findIndex(t => !AMR_FLEET.some(r => r.currentTask && r.currentTask.dockId === t.dockId));
+        // Find next eligible outbound task whose bay is NOT currently being visited by another robot
+        const outIdx = outboundTasks.findIndex(t => !AMR_FLEET.some(r => r.currentTask && r.currentTask.bayId === t.bayId));
+
+        if (inIdx !== -1 && (outIdx === -1 || Math.random() > 0.5)) {
+          taskQueue = inboundTasks;
+          taskIdx = inIdx;
+          task = inboundTasks[inIdx];
+          tx = task.dockX; ty = task.dockY;
+        } else if (outIdx !== -1) {
+          taskQueue = outboundTasks;
+          taskIdx = outIdx;
+          task = outboundTasks[outIdx];
           const access = getAccessPointForRack(task.rack.x, task.rack.y, 40, 25);
           tx = access ? access.x : task.rack.x;
           ty = access ? access.y : task.rack.y;
         } else {
-          task = inboundTasks[0]; tx = task.dockX; ty = task.dockY;
+          break; // All currently queued docks or bays are busy with active AMRs
         }
 
         // Conduct decentralized auction among peer agents
         const robot = conductDecentralizedAuction(task, tx, ty);
         if (!robot) break;
 
+        taskQueue.splice(taskIdx, 1);
+        robot.currentTask = task;
+
         if (task.type === 'INBOUND') {
-          inboundTasks.shift();
-          robot.currentTask = task;
           robot.state = 'MOVING_TO_PICKUP';
           robot.targetDesc = `Dock ${task.dockId} (Pickup)`;
           robot.path = findAStarPath(robot.gridX, robot.gridY, task.dockX, task.dockY);
           robot.pathIndex = 0;
         } else if (task.type === 'OUTBOUND') {
-          outboundTasks.shift();
-          robot.currentTask = task;
           robot.state = 'MOVING_TO_RETRIEVE';
           robot.targetDesc = `Rack (${task.rack.x},${task.rack.y}) L${task.floorNum}`;
           const access = getAccessPointForRack(task.rack.x, task.rack.y, robot.gridX, robot.gridY);
@@ -1528,6 +1544,9 @@
 
         setTimeout(() => {
           if (robot.isPoweredOff || robot.isFaulted) return;
+          if (task.rackSlot.rack.reservedInbound) {
+            task.rackSlot.rack.reservedInbound.delete(task.rackSlot.floorIndex);
+          }
           task.rackSlot.rack.floors[task.rackSlot.floorIndex] = task.parcel;
           logTerminal('SHELVING', 'tag-complete', `📥 <strong>${robot.id}</strong> stored <strong>${task.parcel.parcel_id}</strong> at Rack (${task.rackSlot.rack.x}, ${task.rackSlot.rack.y}) Tier ${task.rackSlot.floorNum}`);
           robot.cargo = null;
@@ -1545,9 +1564,13 @@
         robot.state = 'LIFTING_CARGO';
         robot.targetDesc = `Retrieving parcel from Tier ${task.floorNum}...`;
 
+        // IMMEDIATELY EMPTY THE PARTICULAR SPACE IN THE RACK UPON PICKUP!
+        task.rack.floors[task.floorIndex] = null;
+        if (task.rack.reservedOutbound) task.rack.reservedOutbound.delete(task.floorIndex);
+        render();
+
         setTimeout(() => {
           if (robot.isPoweredOff || robot.isFaulted) return;
-          task.rack.floors[task.floorIndex] = null; // SLOT BECOMES EMPTY WIREFRAME BRACKET
           robot.cargo = task.parcel;
           robot.state = 'CARRYING_TO_BAY';
           robot.targetDesc = `Delivering to Bay ${task.bayId}`;
@@ -1582,7 +1605,16 @@
       } else if (robot.state === 'RESCUING') {
         completeRescueHandoff(robot);
       } else if (robot.state === 'YIELDING_POCKET') {
-        // Exited pocket; resume original task
+        // Exited pocket: check if opposing robot has actually cleared the narrow aisle
+        const opposing = AMR_FLEET.find(b => b.gridX === robot.gridX && b.id !== robot.id && !b.isFaulted && !b.isPoweredOff);
+        const isAisleBusy = opposing && ((robot.gridY >= 23 && opposing.gridY < 23) || (robot.gridY <= 6 && opposing.gridY > 4));
+        if (isAisleBusy) {
+          robot.targetDesc = `Waiting at pocket: aisle ${robot.gridX} busy (${opposing.id})`;
+          robot.path = [];
+          robot.pathIndex = 0;
+          return;
+        }
+        // Aisle is clear! Safe to resume original mission
         robot.isYielding = false;
         unstickRobot(robot);
       }
@@ -1765,6 +1797,17 @@
           }
         }
 
+        // If robot is waiting in yielding pocket for aisle to clear
+        if (robot.state === 'YIELDING_POCKET' && (!robot.path || robot.path.length === 0)) {
+          const opposing = AMR_FLEET.find(b => b.gridX === robot.gridX && b.id !== robot.id && !b.isFaulted && !b.isPoweredOff);
+          const isAisleBusy = opposing && ((robot.gridY >= 23 && opposing.gridY < 23) || (robot.gridY <= 6 && opposing.gridY > 4));
+          if (!isAisleBusy) {
+            robot.isYielding = false;
+            unstickRobot(robot);
+          }
+          continue;
+        }
+
         // Space-Time Zero Collision Arbitration
         const canAdvance = arbitrateTraffic(robot, dt);
 
@@ -1784,12 +1827,18 @@
           robot.heading += diff * Math.min(1, dt * 14 * simSpeed);
         }
 
-        // Deadlock Watchdog: Detect stationary blocked robots & auto-unstick after 2.2s
+        // IF TRAFFIC ARBITER BLOCKED ADVANCE, HOLD POSITION SAFELY!
+        if (!canAdvance) {
+          robot.stuckDuration = 0; // Reset watchdog: robot is intentionally waiting/yielding!
+          continue;
+        }
+
+        // Deadlock Watchdog: Detect robots that have clearance to move but are physically blocked for > 3.5s
         if (robot.path && robot.path.length > 0 && robot.state !== 'IDLE_CHARGING' && robot.state !== 'HUMAN_SAFETY_STOP') {
           const moveDist = Math.hypot(robot.x - (robot.lastX || robot.x), robot.y - (robot.lastY || robot.y));
           if (moveDist < 0.04) {
             robot.stuckDuration = (robot.stuckDuration || 0) + dt;
-            if (robot.stuckDuration > 2.2) {
+            if (robot.stuckDuration > 3.5) {
               unstickRobot(robot);
             }
           } else {
@@ -1798,9 +1847,6 @@
             robot.stuckDuration = 0;
           }
         }
-
-        // IF TRAFFIC ARBITER BLOCKED ADVANCE, HOLD POSITION!
-        if (!canAdvance) continue;
 
         const step = speed * dt;
         if (dist <= step) {
@@ -1982,28 +2028,7 @@
         }
       }
 
-      // 5. Decentralized Peer-to-Peer Mesh Network Overlay (Radio links)
-      if (isAiMode && cellSize >= 10) {
-        ctx.save();
-        ctx.strokeStyle = 'rgba(168, 85, 247, 0.15)';
-        ctx.lineWidth = 0.8;
-        ctx.setLineDash([3, 5]);
-        for (let i = 0; i < AMR_FLEET.length; i++) {
-          for (let j = i + 1; j < AMR_FLEET.length; j++) {
-            const b1 = AMR_FLEET[i], b2 = AMR_FLEET[j];
-            if (!b1.isFaulted && !b1.isPoweredOff && !b2.isFaulted && !b2.isPoweredOff) {
-              const d = Math.hypot(b1.x - b2.x, b1.y - b2.y);
-              if (d <= 25) { // Within peer radio range
-                ctx.beginPath();
-                ctx.moveTo((b1.x + 0.5) * cellSize, (b1.y + 0.5) * cellSize);
-                ctx.lineTo((b2.x + 0.5) * cellSize, (b2.y + 0.5) * cellSize);
-                ctx.stroke();
-              }
-            }
-          }
-        }
-        ctx.restore();
-      }
+
 
       // 6. Human Workers
       for (const worker of humanWorkers) {
@@ -2272,8 +2297,10 @@
       const pickups = Object.keys(mapData.stations).filter(id => id.startsWith('P'));
       if (pickups.length === 0) return;
 
-      const chosenDock = pickups[Math.floor(Math.random() * pickups.length)];
-      const r = Math.floor(Math.random() * 6) + 2;
+      // Choose dock with smallest current queue to balance load across warehouse
+      pickups.sort((a, b) => ((inboundQueues[a] && inboundQueues[a].length) || 0) - ((inboundQueues[b] && inboundQueues[b].length) || 0));
+      const chosenDock = pickups[0];
+      const r = Math.floor(Math.random() * 3) + 1; // 1 to 3 parcels per arrival to prevent clustering
 
       const batch = [];
       for (let i = 0; i < r; i++) {
@@ -2297,7 +2324,9 @@
       for (const parcel of batch) {
         const slot = findAvailableRackSlot(parcel.sku);
         if (slot) {
-          slot.rack.floors[slot.floorIndex] = { isReservedInbound: true, parcel };
+          if (!slot.rack.reservedInbound) slot.rack.reservedInbound = new Set();
+          slot.rack.reservedInbound.add(slot.floorIndex);
+          // slot.rack.floors[slot.floorIndex] stays null so it renders as empty [ · ] wireframe until AMR deposits it!
           inboundTasks.push({
             type: 'INBOUND',
             dockId: chosenDock,
@@ -2317,14 +2346,20 @@
       const dropoffs = Object.keys(mapData.stations).filter(id => id.startsWith('D'));
       if (dropoffs.length === 0) return;
 
-      const chosenBay = dropoffs[Math.floor(Math.random() * dropoffs.length)];
-      const r = Math.floor(Math.random() * 5) + 2;
+      // Filter to idle dropoff bays
+      const availableBays = dropoffs.filter(id => !outboundOrders[id]);
+      if (availableBays.length === 0) return;
+
+      const chosenBay = availableBays[Math.floor(Math.random() * availableBays.length)];
+      const r = Math.floor(Math.random() * 3) + 1; // 1 to 3 parcels per order
 
       const allStored = [];
       for (const rack of Object.values(rackMemory)) {
+        if (!rack.reservedOutbound) rack.reservedOutbound = new Set();
         for (let f = 0; f < MAX_FLOORS; f++) {
           const item = rack.floors[f];
-          if (item && !item.isReservedInbound && !item.isReservedOutbound) {
+          // Must be an actual stored parcel that is NOT already reserved for outbound retrieval
+          if (item && !rack.reservedOutbound.has(f)) {
             allStored.push({ parcel: item, rack, floorIndex: f, floorNum: f + 1 });
           }
         }
@@ -2341,7 +2376,8 @@
       outboundOrders[chosenBay] = { orderId, bayId: chosenBay, totalCount: retrieved.length, deliveredCount: 0 };
 
       for (const item of retrieved) {
-        item.rack.floors[item.floorIndex] = { isReservedOutbound: true, parcel: item.parcel };
+        if (!item.rack.reservedOutbound) item.rack.reservedOutbound = new Set();
+        item.rack.reservedOutbound.add(item.floorIndex);
         outboundTasks.push({
           type: 'OUTBOUND',
           orderId,
@@ -2364,8 +2400,9 @@
       const designated = [];
       const any = [];
       for (const rack of Object.values(rackMemory)) {
+        if (!rack.reservedInbound) rack.reservedInbound = new Set();
         for (let f = 0; f < MAX_FLOORS; f++) {
-          if (rack.floors[f] === null) {
+          if (rack.floors[f] === null && !rack.reservedInbound.has(f)) {
             const slot = { rack, floorIndex: f, floorNum: f + 1 };
             if (rack.categorySku === sku) designated.push(slot);
             any.push(slot);
