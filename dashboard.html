@@ -1136,6 +1136,9 @@
       for (const worker of humanWorkers) {
         const dist = Math.hypot(robot.x - worker.x, robot.y - worker.y);
         if (dist <= 2.2) {
+          if (robot.state !== 'HUMAN_SAFETY_STOP') {
+            robot.preSafetyState = robot.state;
+          }
           robot.state = 'HUMAN_SAFETY_STOP';
           robot.targetDesc = `🛑 Safety Stop: Human Worker (${worker.name})`;
           robot.safetyStopTimer += dt;
@@ -1150,7 +1153,7 @@
             if (detour.length > 0) {
               robot.path = detour;
               robot.pathIndex = 0;
-              robot.state = robot.cargo ? 'CARRYING_TO_BAY' : 'MOVING_TO_PICKUP';
+              robot.state = robot.preSafetyState || (robot.cargo ? (robot.currentTask && robot.currentTask.rackSlot ? 'CARRYING_TO_RACK' : 'CARRYING_TO_BAY') : 'MOVING_TO_PICKUP');
               robot.safetyStopTimer = 0;
               logTerminal('SAFETY', 'tag-safety', `🔄 <strong>${robot.id}</strong> computed dynamic A* detour around human.`);
             }
@@ -1160,7 +1163,7 @@
       }
 
       if (robot.state === 'HUMAN_SAFETY_STOP') {
-        robot.state = robot.cargo ? 'CARRYING_TO_BAY' : 'MOVING_TO_PICKUP';
+        robot.state = robot.preSafetyState || (robot.cargo ? (robot.currentTask && robot.currentTask.rackSlot ? 'CARRYING_TO_RACK' : 'CARRYING_TO_BAY') : 'MOVING_TO_PICKUP');
         robot.safetyStopTimer = 0;
       }
 
@@ -1223,29 +1226,52 @@
     // -------------------------------------------------------------
     // Anti-Stuck Deadlock Watchdog & Manual Unstick
     // -------------------------------------------------------------
-    function unstickRobot(robot) {
-      if (!robot || robot.isPoweredOff) return;
-
+    function resumeRobotTask(robot) {
+      if (!robot || robot.isFaulted || robot.isPoweredOff) return;
       robot.stuckDuration = 0;
       robot.isYielding = false;
       robot.yieldCooldown = 1.0;
 
-      if (robot.currentTask) {
-        robot.state = robot.cargo ? 'CARRYING_TO_BAY' : (robot.state === 'MOVING_TO_RETRIEVE' ? 'MOVING_TO_RETRIEVE' : 'MOVING_TO_PICKUP');
-        let gx = robot.homeX, gy = robot.homeY;
-        if (robot.cargo && robot.currentTask.bayX !== undefined) {
-          gx = robot.currentTask.bayX; gy = robot.currentTask.bayY;
-        } else if (robot.currentTask.dockX !== undefined) {
-          gx = robot.currentTask.dockX; gy = robot.currentTask.dockY;
-        }
-        // Force path recalculation with high aversion to current bottleneck
-        robot.path = findAStarPath(robot.gridX, robot.gridY, gx, gy, { ignoreBotCost: false });
-        robot.pathIndex = 0;
-      } else {
+      const task = robot.currentTask;
+      if (!task) {
         robot.state = 'IDLE';
         dispatchFleet();
+        return;
       }
-      logTerminal('UNSTICK', 'tag-system', `⚡ <strong>${robot.id}</strong> auto-unblocked and recalculated route.`);
+
+      let gx = robot.homeX, gy = robot.homeY;
+      if (robot.cargo) {
+        if (task.rackSlot) {
+          robot.state = 'CARRYING_TO_RACK';
+          robot.targetDesc = `Shelving at Rack (${task.rackSlot.rack.x},${task.rackSlot.rack.y}) L${task.rackSlot.floorNum}`;
+          const access = getAccessPointForRack(task.rackSlot.rack.x, task.rackSlot.rack.y, robot.gridX, robot.gridY);
+          if (access) { gx = access.x; gy = access.y; }
+        } else {
+          robot.state = 'CARRYING_TO_BAY';
+          robot.targetDesc = `Delivering to Bay ${task.bayId || ''}`;
+          if (task.bayX !== undefined) { gx = task.bayX; gy = task.bayY; }
+        }
+      } else {
+        if (task.type === 'INBOUND' || task.dockX !== undefined) {
+          robot.state = 'MOVING_TO_PICKUP';
+          robot.targetDesc = `Dock ${task.dockId} (Pickup)`;
+          gx = task.dockX; gy = task.dockY;
+        } else if (task.type === 'OUTBOUND' || task.rack) {
+          robot.state = 'MOVING_TO_RETRIEVE';
+          robot.targetDesc = `Rack (${task.rack.x},${task.rack.y}) L${task.floorNum}`;
+          const access = getAccessPointForRack(task.rack.x, task.rack.y, robot.gridX, robot.gridY);
+          if (access) { gx = access.x; gy = access.y; }
+        }
+      }
+
+      robot.path = findAStarPath(robot.gridX, robot.gridY, gx, gy, { ignoreBotCost: false });
+      robot.pathIndex = 0;
+    }
+
+    function unstickRobot(robot) {
+      if (!robot || robot.isPoweredOff) return;
+      resumeRobotTask(robot);
+      logTerminal('UNSTICK', 'tag-system', `⚡ <strong>${robot.id}</strong> auto-unblocked and route refreshed.`);
     }
 
     function unstickAllRobots() {
@@ -1566,15 +1592,13 @@
 
         logTerminal('RESCUE', 'tag-complete', `🤝 Cargo transfer complete! <strong>${surrogate.id}</strong> took over parcel <strong>${surrogate.cargo.parcel_id}</strong> from disabled ${faultedBot.id}. Resuming delivery.`);
 
-        surrogate.state = 'CARRYING_TO_BAY';
-        surrogate.targetDesc = `Delivering Rescued Parcel to ${surrogate.currentTask.bayId}`;
-        surrogate.path = findAStarPath(surrogate.gridX, surrogate.gridY, surrogate.currentTask.bayX, surrogate.currentTask.bayY);
-        surrogate.pathIndex = 0;
+        surrogate.rescueTarget = null;
+        resumeRobotTask(surrogate);
       } else {
+        surrogate.rescueTarget = null;
         surrogate.state = 'IDLE';
         dispatchFleet();
       }
-      surrogate.rescueTarget = null;
     }
 
     function repairRobot(robotId) {
