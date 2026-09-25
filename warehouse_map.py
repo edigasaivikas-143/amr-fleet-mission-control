@@ -113,16 +113,16 @@ class WarehouseMap:
             for x in range(54, 76):
                 self.narrow_aisles.add((x, y))
 
-        # 4. Dedicated Charging Depots at Top Center and Bottom Center:
-        # A. Top Center Charging Row (y=1, x from 38 to 41)
-        for i, cx in enumerate([38, 39, 40, 41]):
+        # 4. Dedicated Charging Depots at Top Center and Bottom Center (Aligned with central vertical aisles):
+        # A. Top Center Charging Row (y=1, x in [35, 38, 41, 44])
+        for i, cx in enumerate([35, 38, 41, 44]):
             cid = f"CH-{i+1:02d}"
             cname = f"Top Center Fast Charge {i+1}"
             self.stations[cid] = Station(cid, cname, "charging", cx, 1, "Charging-Top-Center")
             self.grid[cx][1] = CELL_CHARGING
 
-        # B. Bottom Center Charging Row (y=48, x from 38 to 41)
-        for i, cx in enumerate([38, 39, 40, 41]):
+        # B. Bottom Center Charging Row (y=48, x in [35, 38, 41, 44])
+        for i, cx in enumerate([35, 38, 41, 44]):
             cid = f"CH-{i+5:02d}"
             cname = f"Bottom Center Fast Charge {i+1}"
             self.stations[cid] = Station(cid, cname, "charging", cx, 48, "Charging-Bottom-Center")
