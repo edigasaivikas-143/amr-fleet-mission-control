@@ -1090,6 +1090,24 @@
             stepCost += 1.8;
           }
 
+          // West Dock Corridor (x in [2..4]):
+          // Column 3 is Southbound (down to docks cy < ny)
+          // Column 4 is Northbound (up from docks cy > ny)
+          if (nx === 3 && cy > ny) {
+            stepCost += 2.0; // Heading North on Southbound lane
+          } else if (nx === 4 && cy < ny) {
+            stepCost += 2.0; // Heading South on Northbound lane
+          }
+
+          // East Dock Corridor (x in [76..78]):
+          // Column 77 is Southbound (down to docks cy < ny)
+          // Column 76 is Northbound (up from docks cy > ny)
+          if (nx === 77 && cy > ny) {
+            stepCost += 2.0;
+          } else if (nx === 76 && cy < ny) {
+            stepCost += 2.0;
+          }
+
           // High avoidance of human workers (safety envelope)
           for (const worker of humanWorkers) {
             const dist = Math.hypot(nx - worker.x, ny - worker.y);
@@ -1217,51 +1235,7 @@
         const otherNext = (other.path && other.pathIndex < other.path.length) ? other.path[other.pathIndex] : null;
         const distToOther = Math.hypot(robot.x - other.x, robot.y - other.y);
 
-        // 1. Target Cell Currently Occupied (Immediate Collision Prevention)
-        const isTargetOccupied = Math.hypot(other.x - nextCell.x, other.y - nextCell.y) < 0.92;
-        if (isTargetOccupied) {
-          robot.targetDesc = `Hold: Waiting for ${other.id} to clear (${nextCell.x},${nextCell.y})`;
-          return false; // HOLD POSITION
-        }
-
-        // 2. Single-Lane Narrow Aisle Head-On Preemption (Columns in SINGLE_LANE_COLUMNS)
-        if (SINGLE_LANE_COLUMNS.has(robot.gridX) && other.gridX === robot.gridX) {
-          const isMeHeadingSouth = nextCell.y > robot.gridY;
-          const isOtherHeadingNorth = otherNext && otherNext.y < other.gridY;
-          const isMeHeadingNorth = nextCell.y < robot.gridY;
-          const isOtherHeadingSouth = otherNext && otherNext.y > other.gridY;
-
-          const isOpposingTraffic = (isMeHeadingSouth && isOtherHeadingNorth && robot.gridY < other.gridY) ||
-                                    (isMeHeadingNorth && isOtherHeadingSouth && robot.gridY > other.gridY);
-
-          if (isOpposingTraffic || (otherNext && otherNext.y === robot.gridY)) {
-            if (myScore < otherScore || (myScore === otherScore && robot.id > other.id)) {
-              if (robot.state !== 'YIELDING_POCKET') {
-                const isOtherNorth = other.gridY < robot.gridY;
-                const retreatY = isOtherNorth ? (robot.gridY <= 23 ? 24 : 46) : (robot.gridY <= 23 ? 4 : 25);
-                const retreatPath = findAStarPath(robot.gridX, robot.gridY, robot.gridX, retreatY, { ignoreDynamic: true });
-                if (retreatPath.length > 0) {
-                  robot.path = retreatPath;
-                  robot.pathIndex = 0;
-                  robot.state = 'YIELDING_POCKET';
-                  robot.yieldTargetId = other.id;
-                  robot.targetDesc = `Yielding single-lane aisle ${robot.gridX} to ${other.id}`;
-                  logConflict(`🔀 Aisle Conflict: <strong>${robot.id}</strong> yielding right-of-way to <strong>${other.id}</strong>`);
-                  logTerminal('PRIORITY', 'tag-yield', `🛑 <strong>${robot.id}</strong> reversing to aisle exit to let high-priority <strong>${other.id}</strong> pass.`);
-                  kpiYieldConflictsResolved++;
-                  kpiCollisionsPrevented++;
-                  updateHudStats();
-                }
-              }
-              return true; // Let it advance along retreatPath
-            } else {
-              // Higher-priority robot continues forward smoothly
-              return true;
-            }
-          }
-        }
-
-        // 3. Open Corridor Head-On / Opposing Traffic Check
+        // 1. Head-On / Opposing Traffic Encounter Check (Highest Precedence)
         const dxToOther = other.x - robot.x;
         const dyToOther = other.y - robot.y;
         const targetDx = nextCell.x - robot.x;
@@ -1272,19 +1246,75 @@
         const otherTargetDy = otherNext ? otherNext.y - other.y : 0;
         const otherDot = (-dxToOther) * otherTargetDx + (-dyToOther) * otherTargetDy;
 
-        const isHeadOn = (dot > 0.05 && otherDot > 0.05 && distToOther < 2.5);
+        // Opposing traffic: both moving toward each other or facing in narrow column
+        const isHeadOn = (dot > 0.05 && otherDot > 0.05 && distToOther < 2.5) ||
+                         (SINGLE_LANE_COLUMNS.has(robot.gridX) && other.gridX === robot.gridX && distToOther < 3.0);
+
         if (isHeadOn) {
           const iHaveRightOfWay = (myScore > otherScore) || (myScore === otherScore && robot.id < other.id);
+
           if (!iHaveRightOfWay) {
-            robot.targetDesc = `Yielding lane to high-priority ${other.id}`;
-            kpiYieldConflictsResolved++;
-            kpiCollisionsPrevented++;
-            updateHudStats();
-            return false; // Lower priority holds until higher priority passes
+            // Lower priority robot MUST vacate the oncoming path!
+            // First attempt: Side-step into an open perpendicular adjacent cell
+            const isVerticalMove = Math.abs(nextCell.y - robot.gridY) > 0;
+            const side1 = isVerticalMove ? { x: robot.gridX - 1, y: robot.gridY } : { x: robot.gridX, y: robot.gridY - 1 };
+            const side2 = isVerticalMove ? { x: robot.gridX + 1, y: robot.gridY } : { x: robot.gridX, y: robot.gridY + 1 };
+
+            let sideStep = null;
+            if (isCellWalkable(side1.x, side1.y) && !AMR_FLEET.some(b => b.id !== robot.id && Math.hypot(b.x - side1.x, b.y - side1.y) < 1.05)) {
+              sideStep = side1;
+            } else if (isCellWalkable(side2.x, side2.y) && !AMR_FLEET.some(b => b.id !== robot.id && Math.hypot(b.x - side2.x, b.y - side2.y) < 1.05)) {
+              sideStep = side2;
+            }
+
+            if (sideStep && robot.state !== 'YIELDING_POCKET') {
+              robot.path = [sideStep, ...robot.path.slice(robot.pathIndex)];
+              robot.pathIndex = 0;
+              robot.state = 'YIELDING_POCKET';
+              robot.yieldTargetId = other.id;
+              robot.targetDesc = `Side-stepping to (${sideStep.x},${sideStep.y}) for ${other.id}`;
+              kpiYieldConflictsResolved++;
+              kpiCollisionsPrevented++;
+              updateHudStats();
+              return true; // ADVANCE INTO SIDE-STEP CELL!
+            }
+
+            // Second attempt: Narrow aisle / walled corridor - Reverse to exit pocket
+            if (robot.state !== 'YIELDING_POCKET') {
+              const isOtherNorth = other.gridY < robot.gridY;
+              const retreatY = isOtherNorth ? (robot.gridY <= 23 ? 24 : 46) : (robot.gridY <= 23 ? 4 : 25);
+              const retreatPath = findAStarPath(robot.gridX, robot.gridY, robot.gridX, retreatY, { ignoreDynamic: true });
+              if (retreatPath.length > 0) {
+                robot.path = retreatPath;
+                robot.pathIndex = 0;
+                robot.state = 'YIELDING_POCKET';
+                robot.yieldTargetId = other.id;
+                robot.targetDesc = `Yielding lane to ${other.id}`;
+                kpiYieldConflictsResolved++;
+                kpiCollisionsPrevented++;
+                updateHudStats();
+                return true; // ADVANCE ALONG RETREAT PATH!
+              }
+            }
+
+            robot.targetDesc = `Yielding lane to ${other.id}`;
+            return false;
           } else {
             // Higher priority robot proceeds without interruption!
+            const isTargetBlockedByOther = Math.hypot(other.x - nextCell.x, other.y - nextCell.y) < 0.85;
+            if (isTargetBlockedByOther) {
+              robot.targetDesc = `Right-of-Way: Waiting for ${other.id} to side-step`;
+              return false;
+            }
             return true;
           }
+        }
+
+        // 2. Target Cell Currently Occupied (Immediate Collision Prevention)
+        const isTargetOccupied = Math.hypot(other.x - nextCell.x, other.y - nextCell.y) < 0.92;
+        if (isTargetOccupied) {
+          robot.targetDesc = `Hold: Waiting for ${other.id} to clear (${nextCell.x},${nextCell.y})`;
+          return false; // HOLD POSITION
         }
 
         // 4. Converging / Intersection Conflict (Both robots targeting the SAME cell)
