@@ -35,7 +35,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      z-index: 20;
+      z-index: 25;
       box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
     }
     .brand { display: flex; align-items: center; gap: 12px; }
@@ -59,7 +59,7 @@
       border: 1px solid rgba(251, 191, 36, 0.5);
     }
 
-    .top-actions { display: flex; align-items: center; gap: 10px; }
+    .top-actions { display: flex; align-items: center; gap: 8px; }
     .btn {
       background: #1e293b;
       color: var(--text);
@@ -78,6 +78,8 @@
     .btn:hover { background: #334155; border-color: var(--accent); color: #fff; }
     .btn-primary { background: rgba(56, 189, 248, 0.2); border-color: var(--accent); color: var(--accent); }
     .btn-primary:hover { background: var(--accent); color: #000; box-shadow: 0 0 12px rgba(56, 189, 248, 0.5); }
+    .btn-unstick { background: linear-gradient(135deg, rgba(234, 179, 8, 0.25), rgba(249, 115, 22, 0.25)); border-color: #facc15; color: #facc15; font-weight: 700; }
+    .btn-unstick:hover { background: #facc15; color: #000; box-shadow: 0 0 14px rgba(250, 204, 21, 0.6); }
     .btn-danger { background: rgba(239, 68, 68, 0.2); border-color: #ef4444; color: #ef4444; }
     .btn-danger:hover { background: #ef4444; color: #fff; box-shadow: 0 0 10px rgba(239, 68, 68, 0.5); }
     .btn.active { background: var(--accent); color: #090d16; font-weight: 700; box-shadow: 0 0 10px var(--accent); }
@@ -185,6 +187,74 @@
       pointer-events: none;
     }
     .tool-btn:hover .tooltip-text { visibility: visible; }
+
+    /* Fleet Power Management Drawer / Switchboard */
+    .fleet-power-panel {
+      position: absolute;
+      top: 16px;
+      right: 320px;
+      width: 330px;
+      background: var(--panel-trans);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--border-accent);
+      border-radius: 10px;
+      padding: 12px 14px;
+      z-index: 30;
+      box-shadow: 0 15px 35px rgba(0,0,0,0.85);
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
+    }
+    .fleet-power-panel.open { display: flex; }
+    .fleet-card-item {
+      background: #141c2c;
+      border: 1px solid #233048;
+      border-radius: 6px;
+      padding: 7px 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: all 0.2s;
+    }
+    .fleet-card-item.powered-off {
+      background: #0f131a;
+      border-color: #ef4444;
+      opacity: 0.8;
+    }
+    .power-switch-btn {
+      padding: 3px 9px;
+      border-radius: 4px;
+      font-size: 10.5px;
+      font-weight: 700;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s;
+    }
+    .power-switch-btn.on {
+      background: rgba(34, 197, 94, 0.2);
+      color: #22c55e;
+      border-color: #22c55e;
+    }
+    .power-switch-btn.on:hover { background: #22c55e; color: #000; }
+    .power-switch-btn.off {
+      background: rgba(239, 68, 68, 0.2);
+      color: #ef4444;
+      border-color: #ef4444;
+    }
+    .power-switch-btn.off:hover { background: #ef4444; color: #fff; }
+    .unstick-mini-btn {
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid #38bdf8;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .unstick-mini-btn:hover { background: #38bdf8; color: #000; }
 
     /* Real-Time Metrics & Conflict HUD */
     .hud-metrics {
@@ -440,6 +510,16 @@
     </div>
 
     <div class="top-actions">
+      <!-- Unstick Fleet Action -->
+      <button class="btn btn-unstick" onclick="unstickAllRobots()" title="Clear bottlenecks & unfreeze all robots">
+        ⚡ Unstick Fleet
+      </button>
+
+      <!-- Fleet Power Manager Drawer Toggle -->
+      <button class="btn" id="fleet-power-btn" onclick="toggleFleetPowerPanel()" title="Turn individual AMRs ON or OFF">
+        🤖 Fleet Power (8)
+      </button>
+
       <!-- Engine Mode Toggle -->
       <button class="btn btn-primary" id="mode-toggle-btn" onclick="toggleEngineMode()">
         <span id="mode-icon">⚡</span> <span id="mode-label">Mode: Edge-AI MAPF</span>
@@ -523,6 +603,31 @@
       </button>
     </div>
 
+    <!-- Fleet Power Management Panel (Drawer / Modal) -->
+    <div class="fleet-power-panel" id="fleet-power-panel">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #233048; padding-bottom:8px;">
+        <div style="font-weight:700; font-size:12px; color:#fff; display:flex; align-items:center; gap:6px;">
+          <span>🤖 AMR Power & Status Manager</span>
+        </div>
+        <button class="term-btn" onclick="toggleFleetPowerPanel()">✕</button>
+      </div>
+      
+      <div style="font-size:10.5px; color:#94a3b8; line-height:1.4;">
+        Selectively toggle individual AMRs <strong>ON</strong> or <strong>OFF</strong> to clear congestion, suspend robots, or resume paused deliveries.
+      </div>
+
+      <div style="display:flex; gap:6px;">
+        <button class="btn btn-unstick" style="flex:1; padding:4px 8px; font-size:11px;" onclick="unstickAllRobots()">⚡ Unstick All</button>
+        <button class="btn" style="flex:1; padding:4px 8px; font-size:11px;" onclick="powerAllRobots(true)">🟢 All ON</button>
+        <button class="btn btn-danger" style="flex:1; padding:4px 8px; font-size:11px;" onclick="powerAllRobots(false)">🔴 All OFF</button>
+      </div>
+
+      <!-- 8 AMR Cards List -->
+      <div id="fleet-cards-list" style="display:flex; flex-direction:column; gap:6px;">
+        <!-- Populated dynamically via JS -->
+      </div>
+    </div>
+
     <!-- Real-Time Metrics & Conflict HUD (Top Right) -->
     <div class="hud-metrics">
       <div class="hud-title">
@@ -574,6 +679,7 @@
       <div class="legend-item"><div class="legend-box" style="background:#a855f7;"></div>Urgent Cold-Chain</div>
       <div class="legend-item"><div class="legend-box" style="background:#ef4444;"></div>Hazard / Faulted AMR</div>
       <div class="legend-item"><div class="legend-box" style="background:#fbbf24;"></div>Human Worker</div>
+      <div class="legend-item"><div class="legend-box" style="background:#64748b;"></div>Suspended (OFF)</div>
     </div>
 
     <!-- Terminal Console & Mission Logs (Bottom Right) -->
@@ -650,13 +756,13 @@
     const outboundOrders = {};
     const inboundTasks = [];
     const outboundTasks = [];
-    const dynamicHazards = new Set(); // Set of "x,y" strings
-    const humanWorkers = []; // Array of { id, name, x, y, dir, safetyRadius: 1.8 }
+    const dynamicHazards = new Set();
+    const humanWorkers = [];
 
     let parcelSequence = 1000;
     let orderSequence = 2000;
     let currentTool = 'inspect';
-    let isAiMode = true; // true: Edge-AI MAPF Priority Mode | false: Naive BFS
+    let isAiMode = true;
     let currentScenarioId = 0;
     let simSpeed = 1;
     const SPEED_PRESETS = [1, 2, 5, 10];
@@ -679,15 +785,12 @@
     // Initialization: Map, Racks, Fleet
     // -------------------------------------------------------------
     function createFallbackMap() {
-      // 80x50 industrial warehouse layout fallback
       const width = 80, height = 50;
       const grid = Array.from({ length: width }, () => Array(height).fill(0));
 
-      // Perimeter walls
       for (let x = 0; x < width; x++) { grid[x][0] = 1; grid[x][height - 1] = 1; }
       for (let y = 0; y < height; y++) { grid[0][y] = 1; grid[width - 1][y] = 1; }
 
-      // Solid rack pods
       const colPairs = [
         [5,6],[8,9],[11,12],[14,15],[17,18],[20,21],[23,24],
         [30,31],[33,34],[36,37],[39,40],[42,43],[45,46],[48,49],
@@ -701,13 +804,11 @@
       }
 
       const stations = {};
-      // Top & Bottom Chargers
       [38, 39, 40, 41].forEach((cx, i) => {
         stations[`CH-0${i+1}`] = { id: `CH-0${i+1}`, name: `Top Fast Charger ${i+1}`, type: 'charging', x: cx, y: 1, zone: 'Top Center' };
         stations[`CH-0${i+5}`] = { id: `CH-0${i+5}`, name: `Bottom Fast Charger ${i+1}`, type: 'charging', x: cx, y: 48, zone: 'Bottom Center' };
       });
 
-      // Left Side Docks (P-01 to P-05) and Bays (D-01 to D-05)
       [5, 9, 13, 17, 21].forEach((sy, i) => {
         stations[`P-0${i+1}`] = { id: `P-0${i+1}`, name: `West Inbound Dock ${i+1}`, type: 'pickup', x: 1, y: sy, zone: 'West-North' };
       });
@@ -715,7 +816,6 @@
         stations[`D-0${i+1}`] = { id: `D-0${i+1}`, name: `West Sort Bay ${i+1}`, type: 'dropoff', x: 1, y: sy, zone: 'West-South' };
       });
 
-      // Right Side Bays (D-06 to D-10) and Docks (P-06 to P-10)
       [5, 9, 13, 17, 21].forEach((sy, i) => {
         const id = i < 4 ? `D-0${i+6}` : 'D-10';
         stations[id] = { id, name: `East Sort Bay ${i+1}`, type: 'dropoff', x: 78, y: sy, zone: 'East-North' };
@@ -751,7 +851,6 @@
         }
       }
 
-      // Initialize station queues
       for (const sid of Object.keys(mapData.stations)) {
         if (sid.startsWith('P')) inboundQueues[sid] = [];
         if (sid.startsWith('D')) outboundOrders[sid] = null;
@@ -785,7 +884,7 @@
           gridX: bay.x,
           gridY: bay.y,
           heading: i < 4 ? Math.PI / 2 : -Math.PI / 2,
-          state: 'IDLE_CHARGING', // 'IDLE_CHARGING', 'MOVING_TO_PICKUP', 'CARRYING_TO_RACK', 'MOVING_TO_RETRIEVE', 'CARRYING_TO_BAY', 'RETURNING_HOME', 'HUMAN_SAFETY_STOP', 'YIELDING_POCKET', 'FAULT_STOPPED', 'RESCUING'
+          state: 'IDLE_CHARGING',
           battery: 100.0,
           cargo: null,
           currentTask: null,
@@ -794,13 +893,19 @@
           targetDesc: 'Parked at Fast Charger (100%)',
           isFaulted: false,
           faultReason: '',
+          isPoweredOff: false,      // ON / OFF power switch
           isYielding: false,
-          yieldTimer: 0,
+          yieldCooldown: 0,         // Cooldown timer to prevent yield spamming
+          stuckDuration: 0,         // Anti-stuck deadlock watchdog timer
+          pocketWaitTimer: 0,       // Time spent in yield pocket
+          lastX: bay.x,
+          lastY: bay.y,
           safetyStopTimer: 0,
           rescueTarget: null
         });
       }
       updateHudStats();
+      updateFleetPowerCards();
     }
 
     // -------------------------------------------------------------
@@ -809,13 +914,15 @@
     function isCellWalkable(x, y, ignoreDynamic = false) {
       if (!mapData) return false;
       if (x < 0 || x >= mapData.width || y < 0 || y >= mapData.height) return false;
-      if (mapData.grid[x][y] === 1) return false; // Static rack / wall
-      if (!ignoreDynamic && dynamicHazards.has(`${x},${y}`)) return false; // Debris / spill
+      if (mapData.grid[x][y] === 1) return false;
+      if (!ignoreDynamic && dynamicHazards.has(`${x},${y}`)) return false;
 
-      // Faulted robots act as physical obstacles
+      // Faulted or Powered-Off robots act as physical obstacles
       if (!ignoreDynamic) {
         for (const bot of AMR_FLEET) {
-          if (bot.isFaulted && bot.gridX === x && bot.gridY === y) return false;
+          if ((bot.isFaulted || bot.isPoweredOff) && bot.gridX === x && bot.gridY === y) {
+            return false;
+          }
         }
       }
       return true;
@@ -834,7 +941,6 @@
       return best;
     }
 
-    // A* Pathfinding with Dynamic Cost Penalties
     function findAStarPath(sx, sy, gx, gy, options = {}) {
       if (sx === gx && sy === gy) return [];
       if (!isCellWalkable(gx, gy, options.ignoreDynamic)) {
@@ -867,7 +973,6 @@
         }
 
         if (currentIdx === goalIdx) {
-          // Reconstruct path
           const path = [];
           let curr = goalIdx;
           while (curr !== startIdx) {
@@ -892,10 +997,10 @@
           const nIdx = ny * width + nx;
           let stepCost = 1.0;
 
-          // Penalty for cells near human workers (Safety Buffer)
+          // High aversion to walking directly past human workers
           for (const worker of humanWorkers) {
             const dist = Math.hypot(nx - worker.x, ny - worker.y);
-            if (dist <= 1.5) stepCost += 15.0; // High aversion to walking right by humans
+            if (dist <= 1.5) stepCost += 15.0;
           }
 
           const tentativeG = gScore[currentIdx] + stepCost;
@@ -914,26 +1019,24 @@
     // Priority Evaluation & Conflict Arbitration
     // -------------------------------------------------------------
     function getRobotPriority(robot) {
-      if (!robot) return 0;
+      if (!robot || robot.isPoweredOff) return 0;
       let score = 10;
       if (robot.cargo) {
-        if (robot.cargo.priority === 'URGENT' || robot.cargo.sku === 'SKU-PHRM') score += 120; // Cold-Chain pharma SLA
+        if (robot.cargo.priority === 'URGENT' || robot.cargo.sku === 'SKU-PHRM') score += 120;
         else if (robot.cargo.priority === 'HIGH') score += 60;
         else score += 35;
       } else if (robot.state === 'RESCUING') {
-        score += 150; // Emergency rescue AMR
+        score += 150;
       } else if (robot.state === 'MOVING_TO_PICKUP' || robot.state === 'MOVING_TO_RETRIEVE') {
         score += 25;
       }
-      if (robot.battery < 18) score += 90; // Critical battery charging priority
+      if (robot.battery < 18) score += 90;
 
-      // Tie breaker by robot number
       score += (10 - robot.num) * 0.1;
       return score;
     }
 
     function findNearestYieldPocket(robot) {
-      // Find open cell nearby, preferring middle cross-aisle (y=23..26) or transition aisle (y=4, y=45)
       const x = robot.gridX, y = robot.gridY;
       const candidates = [
         { x, y: 24 }, { x, y: 25 }, { x, y: 4 }, { x, y: 45 },
@@ -945,25 +1048,29 @@
       return null;
     }
 
-    // Check Multi-Agent Traffic & Human Interlocks
-    function arbitrateTraffic(robot) {
-      if (!isAiMode) return; // In Naive mode, skip intelligent conflict resolution
-      if (robot.isFaulted || robot.state === 'IDLE_CHARGING') return;
+    // Check Multi-Agent Traffic & Human Interlocks (With Cooldown to Prevent Freezing)
+    function arbitrateTraffic(robot, dt) {
+      if (!isAiMode) return;
+      if (robot.isFaulted || robot.isPoweredOff || robot.state === 'IDLE_CHARGING' || robot.state === 'YIELDING_POCKET') return;
+
+      // Handle yield cooldown
+      if (robot.yieldCooldown > 0) {
+        robot.yieldCooldown -= dt;
+        return;
+      }
 
       // 1. Human Worker Safety Interlock (Absolute Priority)
       for (const worker of humanWorkers) {
         const dist = Math.hypot(robot.x - worker.x, robot.y - worker.y);
         if (dist <= 2.2) {
-          // Engaged safety braking
           robot.state = 'HUMAN_SAFETY_STOP';
           robot.targetDesc = `🛑 Safety Interlock: Human Worker (${worker.name})`;
-          robot.safetyStopTimer += 0.05;
+          robot.safetyStopTimer += dt;
           kpiSafetyStops++;
           updateHudStats();
 
           logConflict(`🛑 Safety Stop: <strong>${robot.id}</strong> halted for human <strong>${worker.name}</strong> at (${worker.x}, ${worker.y})`);
 
-          // If worker stays blocked > 1.8 seconds, dynamically calculate detour
           if (robot.safetyStopTimer > 1.8 && robot.path.length > 0) {
             const goal = robot.path[robot.path.length - 1];
             const detour = findAStarPath(robot.gridX, robot.gridY, goal.x, goal.y);
@@ -979,51 +1086,179 @@
         }
       }
 
-      // If previously stopped for human and path is now clear:
       if (robot.state === 'HUMAN_SAFETY_STOP') {
         robot.state = robot.cargo ? 'CARRYING_TO_BAY' : 'MOVING_TO_PICKUP';
         robot.safetyStopTimer = 0;
       }
 
-      // 2. AMR vs AMR Conflict Detection (Head-On in Narrow Aisles & Crossings)
+      // 2. AMR vs AMR Conflict Detection
       if (!robot.path || robot.pathIndex >= robot.path.length) return;
       const nextCell = robot.path[robot.pathIndex];
 
       for (const other of AMR_FLEET) {
-        if (other.id === robot.id || other.isFaulted) continue;
+        if (other.id === robot.id || other.isFaulted || other.isPoweredOff || other.state === 'IDLE_CHARGING') continue;
 
-        // Check if other robot occupies next cell or is moving directly into our cell (Head-On)
-        const isHeadOn = (other.gridX === nextCell.x && other.gridY === nextCell.y);
-        const isApproaching = other.path && other.pathIndex < other.path.length &&
-                              (other.path[other.pathIndex].x === robot.gridX && other.path[other.pathIndex].y === robot.gridY);
+        // Check if other robot is moving directly into our cell or occupies next cell
+        const isOccupyingNext = (other.gridX === nextCell.x && other.gridY === nextCell.y);
+        let isHeadOn = false;
 
-        if (isHeadOn || isApproaching) {
+        if (other.path && other.pathIndex < other.path.length) {
+          const otherNext = other.path[other.pathIndex];
+          if (otherNext.x === robot.gridX && otherNext.y === robot.gridY) {
+            isHeadOn = true;
+          }
+        }
+
+        if (isOccupyingNext || isHeadOn) {
           const myScore = getRobotPriority(robot);
           const otherScore = getRobotPriority(other);
 
           if (myScore < otherScore) {
-            // WE YIELD TO HIGHER PRIORITY AMR!
             kpiYieldConflictsResolved++;
             kpiCollisionsPrevented++;
             updateHudStats();
 
             robot.isYielding = true;
+            robot.yieldCooldown = 3.0; // 3 second cooldown prevents infinite loop freezing
+            robot.pocketWaitTimer = 1.5;
             robot.state = 'YIELDING_POCKET';
             robot.targetDesc = `Yielding to ${other.id} [Priority: ${Math.round(otherScore)} vs ${Math.round(myScore)}]`;
 
             logConflict(`🔀 Priority Yield: <strong>${robot.id}</strong> (${Math.round(myScore)}) yields right-of-way to <strong>${other.id}</strong> (${Math.round(otherScore)})`);
             logTerminal('PRIORITY', 'tag-yield', `🛑 <strong>${robot.id}</strong> stepped aside into pocket to let high-priority <strong>${other.id}</strong> pass.`);
 
-            // Maneuver into yield pocket or pause 1.5s
             const pocket = findNearestYieldPocket(robot);
             if (pocket) {
               robot.path = [pocket];
               robot.pathIndex = 0;
             }
             return;
+          } else {
+            // Higher priority robot maintains course; other robot will yield
+            return;
           }
         }
       }
+    }
+
+    // -------------------------------------------------------------
+    // Anti-Stuck Deadlock Watchdog & Manual Unstick
+    // -------------------------------------------------------------
+    function unstickRobot(robot) {
+      if (!robot || robot.isPoweredOff) return;
+
+      robot.stuckDuration = 0;
+      robot.isYielding = false;
+      robot.yieldCooldown = 1.0;
+      robot.pocketWaitTimer = 0;
+
+      if (robot.currentTask) {
+        robot.state = robot.cargo ? 'CARRYING_TO_BAY' : (robot.state === 'MOVING_TO_RETRIEVE' ? 'MOVING_TO_RETRIEVE' : 'MOVING_TO_PICKUP');
+        let gx = robot.homeX, gy = robot.homeY;
+        if (robot.cargo && robot.currentTask.bayX !== undefined) {
+          gx = robot.currentTask.bayX; gy = robot.currentTask.bayY;
+        } else if (robot.currentTask.dockX !== undefined) {
+          gx = robot.currentTask.dockX; gy = robot.currentTask.dockY;
+        }
+        robot.path = findAStarPath(robot.gridX, robot.gridY, gx, gy);
+        robot.pathIndex = 0;
+      } else {
+        robot.state = 'IDLE';
+        dispatchFleet();
+      }
+      logTerminal('UNSTICK', 'tag-system', `⚡ <strong>${robot.id}</strong> unblocked and recalculated route.`);
+    }
+
+    function unstickAllRobots() {
+      for (const r of AMR_FLEET) {
+        unstickRobot(r);
+      }
+      logTerminal('FLEET', 'tag-complete', '⚡ <strong>ALL 8 AMRs UNSTUCK:</strong> Yield locks cleared and paths refreshed.');
+      updateHudStats();
+      updateFleetPowerCards();
+    }
+
+    // -------------------------------------------------------------
+    // AMR Power ON / OFF Controls (Requested Feature)
+    // -------------------------------------------------------------
+    function toggleRobotPower(robotId) {
+      const robot = AMR_FLEET.find(r => r.id === robotId);
+      if (!robot) return;
+      robot.isPoweredOff = !robot.isPoweredOff;
+      if (robot.isPoweredOff) {
+        robot.path = [];
+        robot.pathIndex = 0;
+        robot.targetDesc = 'SUSPENDED (POWER OFF)';
+        logTerminal('POWER', 'tag-safety', `🛑 <strong>${robot.id}</strong> POWERED OFF / SUSPENDED.`);
+      } else {
+        robot.targetDesc = 'POWERED ON (READY)';
+        logTerminal('POWER', 'tag-complete', `🟢 <strong>${robot.id}</strong> POWERED ON. Resuming fleet duties.`);
+        unstickRobot(robot);
+      }
+      updateHudStats();
+      updateFleetPowerCards();
+      render();
+    }
+
+    function powerAllRobots(powerOn) {
+      for (const r of AMR_FLEET) {
+        r.isPoweredOff = !powerOn;
+        if (!powerOn) {
+          r.path = [];
+          r.targetDesc = 'SUSPENDED (POWER OFF)';
+        } else {
+          unstickRobot(r);
+        }
+      }
+      logTerminal('POWER', powerOn ? 'tag-complete' : 'tag-safety', powerOn ? '🟢 All AMRs Powered ON.' : '🛑 All AMRs Suspended / Powered OFF.');
+      updateHudStats();
+      updateFleetPowerCards();
+      render();
+    }
+
+    function toggleFleetPowerPanel() {
+      const p = document.getElementById('fleet-power-panel');
+      if (p) {
+        p.classList.toggle('open');
+        updateFleetPowerCards();
+      }
+    }
+
+    function updateFleetPowerCards() {
+      const list = document.getElementById('fleet-cards-list');
+      if (!list) return;
+
+      list.innerHTML = AMR_FLEET.map(r => {
+        const isOff = r.isPoweredOff;
+        const isFault = r.isFaulted;
+        let badgeColor = '#22c55e';
+        let badgeText = 'ACTIVE';
+
+        if (isOff) { badgeColor = '#ef4444'; badgeText = 'SUSPENDED'; }
+        else if (isFault) { badgeColor = '#ef4444'; badgeText = 'FAULTED'; }
+        else if (r.state === 'IDLE_CHARGING') { badgeColor = '#22c55e'; badgeText = 'CHARGING'; }
+        else if (r.state === 'YIELDING_POCKET') { badgeColor = '#f59e0b'; badgeText = 'YIELDING'; }
+
+        return `
+          <div class="fleet-card-item ${isOff ? 'powered-off' : ''}">
+            <div>
+              <div style="font-weight:700; font-size:11.5px; color:#fff; display:flex; align-items:center; gap:6px;">
+                <span>🤖 ${r.id}</span>
+                <span style="font-size:9.5px; padding:1px 5px; border-radius:3px; background:rgba(255,255,255,0.06); color:${badgeColor}; font-weight:700;">${badgeText}</span>
+              </div>
+              <div style="font-size:9.5px; color:#94a3b8; margin-top:2px;">
+                Bat: <strong>${Math.round(r.battery)}%</strong> | Cargo: <strong>${r.cargo ? r.cargo.parcel_id : 'Empty'}</strong>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:5px;">
+              <button class="unstick-mini-btn" onclick="unstickRobot(AMR_FLEET.find(b=>b.id==='${r.id}'))" title="Unstick this robot">⚡</button>
+              <button class="power-switch-btn ${isOff ? 'off' : 'on'}" onclick="toggleRobotPower('${r.id}')">
+                ${isOff ? '🔴 OFF' : '🟢 ON'}
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
     }
 
     // -------------------------------------------------------------
@@ -1032,7 +1267,7 @@
     function getClosestFreeRobot(tx, ty) {
       let best = null, bestDist = Infinity;
       for (const bot of AMR_FLEET) {
-        if (bot.isFaulted || bot.battery < 20) continue;
+        if (bot.isFaulted || bot.isPoweredOff || bot.battery < 20) continue;
         if (bot.state === 'IDLE' || bot.state === 'IDLE_CHARGING' || bot.state === 'RETURNING_HOME') {
           const dist = Math.abs(bot.gridX - tx) + Math.abs(bot.gridY - ty);
           if (dist < bestDist) { bestDist = dist; best = bot; }
@@ -1042,7 +1277,6 @@
     }
 
     function dispatchFleet() {
-      // 1. Inbound & Outbound Assignment
       while (inboundTasks.length > 0 || outboundTasks.length > 0) {
         let task = null, tx = 0, ty = 0;
         if (inboundTasks.length > 0 && (outboundTasks.length === 0 || Math.random() > 0.5)) {
@@ -1079,9 +1313,8 @@
         }
       }
 
-      // 2. Idle Robots Return to Home Fast-Charger
       for (const robot of AMR_FLEET) {
-        if (robot.isFaulted) continue;
+        if (robot.isFaulted || robot.isPoweredOff) continue;
         if (robot.state === 'IDLE') {
           if (robot.gridX === robot.homeX && robot.gridY === robot.homeY) {
             robot.state = 'IDLE_CHARGING';
@@ -1096,10 +1329,11 @@
         }
       }
       updateHudStats();
+      updateFleetPowerCards();
     }
 
     function onRobotReachedDestination(robot) {
-      if (robot.isFaulted) return;
+      if (robot.isFaulted || robot.isPoweredOff) return;
 
       if (robot.state === 'MOVING_TO_PICKUP') {
         const task = robot.currentTask;
@@ -1168,22 +1402,7 @@
         robot.targetDesc = 'Parked at Fast Charger (100%)';
         robot.path = [];
       } else if (robot.state === 'RESCUING') {
-        // Physical cargo handoff from faulted robot to surrogate AMR
         completeRescueHandoff(robot);
-      } else if (robot.state === 'YIELDING_POCKET') {
-        // Resume original task path once conflict has cleared
-        setTimeout(() => {
-          if (robot.currentTask) {
-            robot.state = robot.cargo ? 'CARRYING_TO_BAY' : 'MOVING_TO_PICKUP';
-            const goal = robot.cargo ? { x: robot.currentTask.bayX, y: robot.currentTask.bayY } : { x: robot.currentTask.dockX, y: robot.currentTask.dockY };
-            if (goal.x !== undefined) {
-              robot.path = findAStarPath(robot.gridX, robot.gridY, goal.x, goal.y);
-              robot.pathIndex = 0;
-            }
-          } else {
-            robot.state = 'IDLE'; dispatchFleet();
-          }
-        }, 1200);
       }
     }
 
@@ -1202,21 +1421,19 @@
 
       logTerminal('FAULT', 'tag-safety', `🚨 <strong>${robot.id}</strong> CRITICAL FAILURE: ${reason} at (${robot.gridX}, ${robot.gridY}). Actuator halted.`);
 
-      // Autonomous Task Rescue Handoff
       if (robot.cargo || robot.currentTask) {
         initiateTaskRescueHandoff(robot);
       }
       updateHudStats();
+      updateFleetPowerCards();
     }
 
     function initiateTaskRescueHandoff(faultedBot) {
       logTerminal('RESCUE', 'tag-rescue', `🔄 <strong>AUTONOMOUS FLEET RESCUE:</strong> Dispatching surrogate AMR to take over ${faultedBot.id}'s mission.`);
 
-      // Find closest healthy available robot
       let surrogate = getClosestFreeRobot(faultedBot.gridX, faultedBot.gridY);
       if (!surrogate) {
-        // Preempt lowest priority active robot
-        surrogate = AMR_FLEET.filter(r => !r.isFaulted && r.id !== faultedBot.id)[0];
+        surrogate = AMR_FLEET.filter(r => !r.isFaulted && !r.isPoweredOff && r.id !== faultedBot.id)[0];
       }
 
       if (surrogate) {
@@ -1224,7 +1441,6 @@
         surrogate.rescueTarget = faultedBot;
         surrogate.targetDesc = `Rescue Task: Rendezvous with ${faultedBot.id}`;
 
-        // Navigate to adjacent cell of faulted bot
         const access = getAccessPointForRack(faultedBot.gridX, faultedBot.gridY, surrogate.gridX, surrogate.gridY) || { x: faultedBot.gridX + 1, y: faultedBot.gridY };
         surrogate.path = findAStarPath(surrogate.gridX, surrogate.gridY, access.x, access.y, { ignoreDynamic: true });
         surrogate.pathIndex = 0;
@@ -1239,7 +1455,6 @@
       const faultedBot = surrogate.rescueTarget;
       if (!faultedBot) { surrogate.state = 'IDLE'; dispatchFleet(); return; }
 
-      // Transfer cargo
       if (faultedBot.cargo) {
         surrogate.cargo = faultedBot.cargo;
         surrogate.currentTask = faultedBot.currentTask;
@@ -1271,6 +1486,7 @@
 
       logTerminal('SYSTEM', 'tag-complete', `🔧 <strong>${robot.id}</strong> actuator reset & diagnostic PASSED. Robot restored to active fleet.`);
       updateHudStats();
+      updateFleetPowerCards();
     }
 
     // -------------------------------------------------------------
@@ -1280,14 +1496,13 @@
       const speed = ROBOT_BASE_SPEED * simSpeed;
 
       for (const robot of AMR_FLEET) {
-        if (robot.isFaulted) continue;
+        if (robot.isFaulted || robot.isPoweredOff) continue;
 
         // Battery logic
         if (robot.state === 'IDLE_CHARGING') {
           robot.battery = Math.min(100, robot.battery + dt * 15 * simSpeed);
         } else {
           robot.battery = Math.max(0, robot.battery - dt * 0.35 * simSpeed);
-          // Low battery emergency trigger (<15%)
           if (robot.battery <= 15 && robot.state !== 'RETURNING_HOME' && !robot.isLowBatteryHandled) {
             robot.isLowBatteryHandled = true;
             logTerminal('BATTERY', 'tag-yield', `⚡ Critical Battery on <strong>${robot.id}</strong> (${Math.round(robot.battery)}%). Routing to Charger.`);
@@ -1298,9 +1513,34 @@
           }
         }
 
-        // Conflict check
-        arbitrateTraffic(robot);
+        // Handle Yielding Pocket Wait timer
+        if (robot.state === 'YIELDING_POCKET') {
+          robot.pocketWaitTimer -= dt;
+          if (robot.pocketWaitTimer <= 0) {
+            robot.isYielding = false;
+            unstickRobot(robot);
+          }
+          continue;
+        }
+
+        // Conflict check with cooldown
+        arbitrateTraffic(robot, dt);
         if (robot.state === 'HUMAN_SAFETY_STOP') continue;
+
+        // Deadlock Watchdog: Detect stationary blocked robots & auto-unstick
+        if (robot.path && robot.path.length > 0 && robot.state !== 'IDLE_CHARGING') {
+          const moveDist = Math.hypot(robot.x - (robot.lastX || robot.x), robot.y - (robot.lastY || robot.y));
+          if (moveDist < 0.04) {
+            robot.stuckDuration = (robot.stuckDuration || 0) + dt;
+            if (robot.stuckDuration > 2.0) {
+              unstickRobot(robot);
+            }
+          } else {
+            robot.lastX = robot.x;
+            robot.lastY = robot.y;
+            robot.stuckDuration = 0;
+          }
+        }
 
         if (!robot.path || robot.path.length === 0 || robot.pathIndex >= robot.path.length) continue;
 
@@ -1373,7 +1613,7 @@
         ctx.beginPath(); ctx.moveTo(0, y * cellSize); ctx.lineTo(mapData.width * cellSize, y * cellSize); ctx.stroke();
       }
 
-      // 2. Storage Racks (Dark Charcoal with Tier Indicators)
+      // 2. Storage Racks
       for (let x = 0; x < mapData.width; x++) {
         for (let y = 0; y < mapData.height; y++) {
           if (mapData.grid[x][y] === 1) {
@@ -1391,7 +1631,6 @@
               ctx.lineWidth = occCount === 5 ? 1.5 : 1;
               ctx.strokeRect(x * cellSize + 1, y * cellSize + 1, cellSize - 2, cellSize - 2);
 
-              // 5-Floor Level pips
               if (cellSize >= 14 && occCount > 0) {
                 const pipW = (cellSize - 4) / 5;
                 for (let f = 0; f < occCount; f++) {
@@ -1404,7 +1643,7 @@
         }
       }
 
-      // 3. Dynamic Obstacles & Hazards (Striped hazard blocks)
+      // 3. Dynamic Obstacles & Hazards
       for (const key of dynamicHazards) {
         const [hx, hy] = key.split(',').map(Number);
         const sx = hx * cellSize, sy = hy * cellSize;
@@ -1414,14 +1653,13 @@
         ctx.lineWidth = 1.5;
         ctx.strokeRect(sx + 1, sy + 1, cellSize - 2, cellSize - 2);
 
-        // Warning Triangle ⚠️
         ctx.fillStyle = '#ffffff';
         ctx.font = `bold ${Math.max(8, cellSize * 0.5)}px monospace`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText('⚠️', sx + cellSize / 2, sy + cellSize / 2);
       }
 
-      // 4. Functional Stations (Pickups, Dropoffs, Fast Chargers)
+      // 4. Functional Stations
       for (const st of Object.values(mapData.stations)) {
         const sx = st.x * cellSize, sy = st.y * cellSize;
         if (st.type === 'charging' || st.id.startsWith('CH')) {
@@ -1455,13 +1693,12 @@
         }
       }
 
-      // 5. Human Workers (Safety Radar Circle)
+      // 5. Human Workers
       for (const worker of humanWorkers) {
         const wx = (worker.x + 0.5) * cellSize;
         const wy = (worker.y + 0.5) * cellSize;
         const rad = cellSize * worker.safetyRadius;
 
-        // Pulsing Safety Interlock Bubble
         const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 250);
         ctx.beginPath();
         ctx.arc(wx, wy, rad, 0, Math.PI * 2);
@@ -1473,7 +1710,6 @@
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Human Icon
         ctx.fillStyle = '#f59e0b';
         ctx.beginPath();
         ctx.arc(wx, wy, cellSize * 0.4, 0, Math.PI * 2);
@@ -1516,7 +1752,7 @@
       ctx.translate(cx, cy);
 
       // LiDAR Safety Cone when moving
-      if (r.path.length > 0 && !r.isFaulted && r.state !== 'HUMAN_SAFETY_STOP') {
+      if (r.path.length > 0 && !r.isFaulted && !r.isPoweredOff && r.state !== 'HUMAN_SAFETY_STOP') {
         ctx.save();
         ctx.rotate(r.heading);
         ctx.beginPath();
@@ -1531,7 +1767,11 @@
       // Status Ring Colors
       let ringColor = '#38bdf8';
       let glowColor = 'rgba(56, 189, 248, 0.6)';
-      if (r.isFaulted) {
+
+      if (r.isPoweredOff) {
+        ringColor = '#64748b';
+        glowColor = 'rgba(100, 116, 139, 0.4)';
+      } else if (r.isFaulted) {
         ringColor = '#ef4444';
         glowColor = 'rgba(239, 68, 68, 0.9)';
       } else if (r.state === 'IDLE_CHARGING') {
@@ -1541,7 +1781,7 @@
         ringColor = '#fbbf24';
         glowColor = 'rgba(251, 191, 36, 0.8)';
       } else if (r.cargo && r.cargo.priority === 'URGENT') {
-        ringColor = '#a855f7'; // Cold-Chain Pharma VIP Ring
+        ringColor = '#a855f7';
         glowColor = 'rgba(168, 85, 247, 0.8)';
       }
 
@@ -1551,27 +1791,36 @@
       // Robot Chassis
       ctx.beginPath();
       ctx.arc(0, 0, radius, 0, Math.PI * 2);
-      ctx.fillStyle = r.isFaulted ? '#1c1917' : '#0f172a';
+      ctx.fillStyle = (r.isFaulted || r.isPoweredOff) ? '#1c1917' : '#0f172a';
       ctx.fill();
       ctx.lineWidth = Math.max(1.5, cellSize * 0.08);
       ctx.strokeStyle = ringColor;
+      if (r.isPoweredOff) ctx.setLineDash([2, 2]);
       ctx.stroke();
+      ctx.setLineDash([]);
       ctx.shadowBlur = 0;
 
       // Heading indicator
-      ctx.save();
-      ctx.rotate(r.heading);
-      ctx.fillStyle = ringColor;
-      ctx.beginPath();
-      ctx.moveTo(radius * 0.9, 0);
-      ctx.lineTo(radius * 0.45, -radius * 0.32);
-      ctx.lineTo(radius * 0.45, radius * 0.32);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
+      if (!r.isPoweredOff) {
+        ctx.save();
+        ctx.rotate(r.heading);
+        ctx.fillStyle = ringColor;
+        ctx.beginPath();
+        ctx.moveTo(radius * 0.9, 0);
+        ctx.lineTo(radius * 0.45, -radius * 0.32);
+        ctx.lineTo(radius * 0.45, radius * 0.32);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
 
-      // Physical Cargo Box or Bot Number
-      if (r.isFaulted) {
+      // Center Icon or Cargo Box
+      if (r.isPoweredOff) {
+        ctx.fillStyle = '#ef4444';
+        ctx.font = `bold ${Math.max(9, radius * 0.85)}px monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('⏸️', 0, 0);
+      } else if (r.isFaulted) {
         ctx.fillStyle = '#ef4444';
         ctx.font = `bold ${Math.max(9, radius * 0.95)}px monospace`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1591,7 +1840,6 @@
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText(`${r.num}`, 0, 0);
 
-        // Battery Gauge Bar
         if (cellSize >= 14) {
           const bw = radius * 0.9, bh = 2.5;
           const pct = Math.max(0, Math.min(1, r.battery / 100));
@@ -1612,16 +1860,14 @@
       document.querySelectorAll('.scenario-btn').forEach((b, i) => b.classList.toggle('active', i === id));
 
       if (id === 0) {
-        // Normal Autonomous Operations
         clearDynamicHazards();
         logTerminal('SCENARIO', 'tag-system', '▶️ <strong>SCENARIO 0:</strong> Continuous Autonomous Distributed Fleet Operations Active.');
       } else if (id === 1) {
-        // Narrow Aisle Head-On Conflict & Priority Yielding
         clearDynamicHazards();
         logTerminal('SCENARIO', 'tag-yield', '🎯 <strong>SCENARIO 1:</strong> Narrow Aisle Conflict. Dispatching high-priority Pharma AMR vs Standard AMR in single-lane aisle.');
 
-        const r1 = AMR_FLEET[0]; // High Priority Pharma
-        const r2 = AMR_FLEET[1]; // Standard Cargo
+        const r1 = AMR_FLEET[0];
+        const r2 = AMR_FLEET[1];
 
         r1.x = 32; r1.y = 5; r1.gridX = 32; r1.gridY = 5;
         r1.cargo = { parcel_id: 'PKG-VVIP', priority: 'URGENT', sku: 'SKU-PHRM', name: 'Cold-Chain Vaccine Tote' };
@@ -1634,7 +1880,6 @@
         r2.path = findAStarPath(32, 22, 32, 5);
 
       } else if (id === 2) {
-        // Human Worker Safety Brake & Detour
         clearDynamicHazards();
         logTerminal('SCENARIO', 'tag-safety', '🎯 <strong>SCENARIO 2:</strong> Human Safety Interlock. Placing worker at aisle intersection (35, 12). Approaching AMR will safety-brake.');
 
@@ -1648,7 +1893,6 @@
         r.path = findAStarPath(35, 6, 35, 20);
 
       } else if (id === 3) {
-        // Actuator Fault & Autonomous Task Rescue Handoff
         clearDynamicHazards();
         logTerminal('SCENARIO', 'tag-rescue', '🎯 <strong>SCENARIO 3:</strong> Robot Actuator Breakdown. AMR-01 fails mid-aisle. AMR-03 will execute autonomous cargo rescue.');
 
@@ -1660,7 +1904,6 @@
         setTimeout(() => { triggerRobotBreakdown('AMR-01', 'Drive Actuator Stall'); }, 600);
 
       } else if (id === 4) {
-        // Low Battery Limp & Auto-Recharge Handoff
         clearDynamicHazards();
         logTerminal('SCENARIO', 'tag-yield', '🎯 <strong>SCENARIO 4:</strong> Battery Critical Preemption. Depleting AMR-04 battery to 10%. AMR un-assigns task and seeks charger.');
 
@@ -1671,7 +1914,6 @@
         r.path = findAStarPath(r.gridX, r.gridY, 1, 35);
 
       } else if (id === 5) {
-        // Rush-Hour Surge Stress Test
         logTerminal('SCENARIO', 'tag-system', '🎯 <strong>SCENARIO 5:</strong> Rush-Hour Wave: Ingesting 40 parcels across all docks and departure bays.');
         for (let i = 0; i < 4; i++) {
           triggerInboundShipment();
@@ -1689,7 +1931,7 @@
       if (pickups.length === 0) return;
 
       const chosenDock = pickups[Math.floor(Math.random() * pickups.length)];
-      const r = Math.floor(Math.random() * 6) + 2; // 2 to 7 parcels
+      const r = Math.floor(Math.random() * 6) + 2;
 
       const batch = [];
       for (let i = 0; i < r; i++) {
@@ -1858,11 +2100,13 @@
 
       if (gx < 0 || gx >= mapData.width || gy < 0 || gy >= mapData.height) return;
 
-      // Check click on AMR robot
       const clickedRobot = AMR_FLEET.find(r => Math.hypot(r.x - gx, r.y - gy) <= 0.8);
 
-      if (currentTool === 'human') {
-        // Toggle human worker
+      if (currentTool === 'inspect') {
+        if (clickedRobot) {
+          toggleRobotPower(clickedRobot.id);
+        }
+      } else if (currentTool === 'human') {
         const existingIdx = humanWorkers.findIndex(h => Math.hypot(h.x - gx, h.y - gy) <= 1.5);
         if (existingIdx !== -1) {
           humanWorkers.splice(existingIdx, 1);
@@ -1872,7 +2116,6 @@
           logTerminal('HUMAN', 'tag-safety', `👷 Placed human worker at (${gx}, ${gy}). Safety envelope active.`);
         }
       } else if (currentTool === 'hazard') {
-        // Toggle spilled box / hazard
         const key = `${gx},${gy}`;
         if (dynamicHazards.has(key)) {
           dynamicHazards.delete(key);
@@ -1901,7 +2144,6 @@
         render();
       }
 
-      // Tooltip Hover Inspection
       const rect = canvas.getBoundingClientRect();
       const gx = Math.floor((e.clientX - rect.left - camera.x) / camera.scale);
       const gy = Math.floor((e.clientY - rect.top - camera.y) / camera.scale);
@@ -1914,9 +2156,11 @@
         tooltip.innerHTML = `
           <div style="font-weight:700; color:#38bdf8; margin-bottom:4px;">🤖 ${hoveredBot.id} (AMR Fleet Unit)</div>
           <div>Status: <strong>${hoveredBot.targetDesc}</strong></div>
+          <div>Power State: <strong style="color:${hoveredBot.isPoweredOff ? '#ef4444' : '#22c55e'}">${hoveredBot.isPoweredOff ? '🔴 SUSPENDED (OFF)' : '🟢 ACTIVE (ON)'}</strong></div>
           <div>Priority Score: <strong>${Math.round(getRobotPriority(hoveredBot))}</strong></div>
           <div>Battery: <strong style="color:${hoveredBot.battery > 30 ? '#22c55e' : '#ef4444'}">${Math.round(hoveredBot.battery)}%</strong></div>
           <div>Cargo: <strong>${hoveredBot.cargo ? hoveredBot.cargo.parcel_id + ' (' + hoveredBot.cargo.name + ')' : '[Empty Deck]'}</strong></div>
+          <div style="margin-top:4px; font-size:9.5px; color:#94a3b8; font-style:italic;">Click to toggle Power ON/OFF</div>
         `;
         return;
       }
@@ -1985,8 +2229,8 @@
       const pct = ((totalStored / totalSlots) * 100).toFixed(1);
       document.getElementById('kpi-occupancy').innerText = `${totalStored.toLocaleString()} / ${totalSlots.toLocaleString()} (${pct}%)`;
 
-      const healthy = AMR_FLEET.filter(r => !r.isFaulted).length;
-      document.getElementById('kpi-fleet-health').innerText = `${healthy} / ${AMR_FLEET.length} Healthy`;
+      const healthy = AMR_FLEET.filter(r => !r.isFaulted && !r.isPoweredOff).length;
+      document.getElementById('kpi-fleet-health').innerText = `${healthy} / ${AMR_FLEET.length} Active`;
     }
 
     function logConflict(msg) {
@@ -2096,7 +2340,6 @@
       logTerminal('STARTUP', 'tag-complete', '🚀 Edge-AI AMR Fleet Visualizer Online | SIH 2026 Edition');
       logTerminal('MAPF', 'tag-system', 'Decentralized Conflict Avoidance & Self-Healing Fault Recovery Active.');
 
-      // Periodic Inbound / Outbound Timers
       setInterval(triggerInboundShipment, 12000);
       setInterval(triggerOutboundOrder, 15000);
 
