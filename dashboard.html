@@ -1065,8 +1065,28 @@
           if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
           if (!isCellWalkable(nx, ny, options)) continue;
 
+          // 1. Peer-to-peer explicit avoidance positions (dynamic obstacles from conflicting AMRs)
+          if (options.avoidPositions && options.avoidPositions.has(`${nx},${ny}`)) {
+            continue; // Conflicting robot cell is strictly impassable!
+          }
+
           const nIdx = ny * width + nx;
           let stepCost = 1.0;
+
+          // 2. Multi-Agent Fleet Traffic Distribution: penalize cells currently occupied by other active AMRs
+          if (!options.ignoreFleetSpread) {
+            for (const bot of AMR_FLEET) {
+              if (bot.id === options.selfId || bot.isPoweredOff) continue;
+              if (bot.gridX === nx && bot.gridY === ny) {
+                stepCost += 22.0; // Distribute traffic across other open parallel lanes!
+              } else if (bot.path && bot.pathIndex < bot.path.length) {
+                const bNext = bot.path[bot.pathIndex];
+                if (bNext.x === nx && bNext.y === ny) {
+                  stepCost += 16.0;
+                }
+              }
+            }
+          }
 
           // Multi-Lane Highway Directional Flow Rules (Prevents head-on traffic jams)
           // Top Highway (y in [1..4]): Row 4 is Eastbound (->), Row 3 is Westbound (<-)
@@ -1189,7 +1209,115 @@
 
     // -------------------------------------------------------------
     // Guaranteed Zero-Collision Multi-Agent Traffic Arbiter (MAPF)
+    // Dynamic Peer-to-Peer Inter-Robot Communication & Rerouting
     // -------------------------------------------------------------
+    function rerouteToAlternatePath(robot, conflictingBot) {
+      if (!robot || !robot.path || robot.path.length === 0) return false;
+      const goal = robot.path[robot.path.length - 1];
+      if (!goal) return false;
+
+      // Construct dynamic obstacle avoidance set from conflicting robot and fleet
+      const avoidSet = new Set();
+      if (conflictingBot) {
+        avoidSet.add(`${conflictingBot.gridX},${conflictingBot.gridY}`);
+        avoidSet.add(`${Math.round(conflictingBot.x)},${Math.round(conflictingBot.y)}`);
+        if (conflictingBot.path && conflictingBot.pathIndex < conflictingBot.path.length) {
+          for (let k = conflictingBot.pathIndex; k < Math.min(conflictingBot.path.length, conflictingBot.pathIndex + 5); k++) {
+            avoidSet.add(`${conflictingBot.path[k].x},${conflictingBot.path[k].y}`);
+          }
+        }
+      }
+
+      // Also avoid any other robots within 2.5 cells
+      for (const b of AMR_FLEET) {
+        if (b.id !== robot.id && (!conflictingBot || b.id !== conflictingBot.id)) {
+          if (Math.hypot(b.x - robot.x, b.y - robot.y) < 2.5) {
+            avoidSet.add(`${b.gridX},${b.gridY}`);
+            avoidSet.add(`${Math.round(b.x)},${Math.round(b.y)}`);
+          }
+        }
+      }
+
+      // Never treat our own current cell or goal as an obstacle
+      avoidSet.delete(`${robot.gridX},${robot.gridY}`);
+      avoidSet.delete(`${Math.round(robot.x)},${Math.round(robot.y)}`);
+      avoidSet.delete(`${goal.x},${goal.y}`);
+
+      // Attempt 1: Full A* recalculation to goal avoiding the entire conflict zone
+      const alternatePath = findAStarPath(robot.gridX, robot.gridY, goal.x, goal.y, {
+        selfId: robot.id,
+        avoidPositions: avoidSet,
+        ignoreFleetSpread: false
+      });
+
+      if (alternatePath && alternatePath.length > 0) {
+        const step1 = alternatePath[0];
+        const isStep1Safe = !avoidSet.has(`${step1.x},${step1.y}`) && 
+          (!conflictingBot || Math.hypot(conflictingBot.x - step1.x, conflictingBot.y - step1.y) > 0.85);
+
+        if (isStep1Safe) {
+          robot.path = alternatePath;
+          robot.pathIndex = 0;
+          robot.holdDuration = 0;
+          robot.stuckDuration = 0;
+          robot.targetDesc = `Diverted to lane (${step1.x},${step1.y}) around ${conflictingBot ? conflictingBot.id : 'traffic'}`;
+          kpiYieldConflictsResolved++;
+          kpiCollisionsPrevented++;
+          logTerminal('P2P MAPF', 'tag-yield', `🔀 <strong>${robot.id}</strong> communicated with <strong>${conflictingBot ? conflictingBot.id : 'peer'}</strong>: shifted to alternate lane via (${step1.x}, ${step1.y}).`);
+          updateHudStats();
+          return true;
+        }
+      }
+
+      // Attempt 2: Immediate Lateral Lane Shift (Side-step into parallel corridor lane)
+      const isHorizontalCorridor = (robot.gridY >= 23 && robot.gridY <= 26) || (robot.gridY >= 1 && robot.gridY <= 4) || (robot.gridY >= 45 && robot.gridY <= 48);
+      const shiftDirs = isHorizontalCorridor 
+        ? [{ dx: 0, dy: 1 }, { dx: 0, dy: -1 }, { dx: 1, dy: 0 }, { dx: -1, dy: 0 }]
+        : [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
+
+      for (const sd of shiftDirs) {
+        const sx = robot.gridX + sd.dx;
+        const sy = robot.gridY + sd.dy;
+        if (isCellWalkable(sx, sy) && !avoidSet.has(`${sx},${sy}`)) {
+          const isClear = !AMR_FLEET.some(b => b.id !== robot.id && Math.hypot(b.x - sx, b.y - sy) < 1.0);
+          if (isClear) {
+            const subPath = findAStarPath(sx, sy, goal.x, goal.y, { selfId: robot.id, avoidPositions: avoidSet });
+            robot.path = [{ x: sx, y: sy }, ...(subPath || [])];
+            robot.pathIndex = 0;
+            robot.holdDuration = 0;
+            robot.stuckDuration = 0;
+            robot.targetDesc = `Side-stepping to (${sx},${sy}) around ${conflictingBot ? conflictingBot.id : 'traffic'}`;
+            kpiYieldConflictsResolved++;
+            kpiCollisionsPrevented++;
+            logTerminal('P2P MAPF', 'tag-yield', `🔀 <strong>${robot.id}</strong> dynamic lateral lane shift to (${sx}, ${sy}).`);
+            updateHudStats();
+            return true;
+          }
+        }
+      }
+
+      // Attempt 3: If in single-lane narrow aisle, reverse out to exit pocket
+      if (SINGLE_LANE_COLUMNS.has(robot.gridX) && conflictingBot) {
+        const isOtherAhead = conflictingBot.gridY > robot.gridY;
+        const retreatY = isOtherAhead ? (robot.gridY <= 23 ? 4 : 25) : (robot.gridY <= 23 ? 24 : 46);
+        const retreatPath = findAStarPath(robot.gridX, robot.gridY, robot.gridX, retreatY, { ignoreDynamic: true });
+        if (retreatPath && retreatPath.length > 0) {
+          robot.path = retreatPath;
+          robot.pathIndex = 0;
+          robot.holdDuration = 0;
+          robot.stuckDuration = 0;
+          robot.targetDesc = `Reversing to pocket (${robot.gridX},${retreatY}) for ${conflictingBot.id}`;
+          kpiYieldConflictsResolved++;
+          kpiCollisionsPrevented++;
+          logTerminal('P2P MAPF', 'tag-yield', `🔄 <strong>${robot.id}</strong> reversing out of aisle to pocket (${robot.gridX}, ${retreatY}).`);
+          updateHudStats();
+          return true;
+        }
+      }
+
+      return false;
+    }
+
     function arbitrateTraffic(robot, dt) {
       if (!isAiMode) return true;
       if (robot.isFaulted || robot.isPoweredOff || robot.isChargedOut) return false;
@@ -1244,53 +1372,37 @@
 
         // A. Handle Blockage by Immobilized / Depleted / Faulted / Powered-Off AMRs
         if (other.isFaulted || other.isChargedOut || other.isPoweredOff) {
-          // If this robot is the surrogate AMR arriving to rescue this exact dead bot, allow rendezvous!
           if (robot.state === 'RESCUING' && robot.rescueTarget && robot.rescueTarget.id === other.id) {
-            if (distToOther <= 1.45) {
-              completeRescueHandoff(robot);
-            }
-            return true; // Clear to approach for rescue handoff
+            if (distToOther <= 1.45) completeRescueHandoff(robot);
+            return true;
           }
 
-          // If this robot is NOT the rescue surrogate, but its next cell or proximity is blocked by the dead robot:
           const isBlockedByDeadBot = (nextCell && Math.hypot(other.x - nextCell.x, other.y - nextCell.y) < 0.95) || distToOther < 1.35;
           if (isBlockedByDeadBot) {
-            // Disabled robot will NEVER move. The active robot must reverse out of narrow aisle immediately!
-            if (SINGLE_LANE_COLUMNS.has(robot.gridX)) {
-              if (robot.state !== 'YIELDING_POCKET') {
-                const isOtherAhead = other.gridY > robot.gridY;
-                const retreatY = isOtherAhead ? (robot.gridY <= 23 ? 4 : 25) : (robot.gridY <= 23 ? 24 : 46);
-                const retreatPath = findAStarPath(robot.gridX, robot.gridY, robot.gridX, retreatY, { ignoreDynamic: true });
-                if (retreatPath.length > 0) {
-                  robot.path = retreatPath;
-                  robot.pathIndex = 0;
-                  robot.state = 'YIELDING_POCKET';
-                  robot.targetDesc = `Reversing: aisle blocked by disabled ${other.id}`;
-                  logConflict(`🛑 Aisle Blockage: <strong>${robot.id}</strong> reversing out of aisle ${robot.gridX} blocked by disabled <strong>${other.id}</strong>`);
-                  kpiYieldConflictsResolved++;
-                  updateHudStats();
-                  return true;
-                }
-              }
-              return false;
-            } else {
-              // Open area: compute detour around dead bot
-              const goal = robot.path[robot.path.length - 1];
-              if (goal) {
-                const detour = findAStarPath(robot.gridX, robot.gridY, goal.x, goal.y);
-                if (detour.length > 0) {
-                  robot.path = detour;
-                  robot.pathIndex = 0;
-                  return true;
-                }
-              }
-              return false;
-            }
+            const didReroute = rerouteToAlternatePath(robot, other);
+            if (didReroute) return true;
+            return false;
           }
-          continue; // Not blocked by this dead bot
+          continue;
         }
 
-        // 1. Head-On / Opposing Traffic Encounter Check (Highest Precedence)
+        // B. Handle Stationary Idle AMRs blocking the path
+        if (other.state === 'IDLE' && (!other.path || other.path.length === 0)) {
+          const isBlocking = Math.hypot(other.x - nextCell.x, other.y - nextCell.y) < 0.95;
+          if (isBlocking) {
+            const sideStep = findWalkableAdjacentCell(other.gridX, other.gridY, robot.gridX, robot.gridY);
+            if (sideStep && (sideStep.x !== other.gridX || sideStep.y !== other.gridY)) {
+              other.gridX = sideStep.x; other.gridY = sideStep.y;
+              other.x = sideStep.x; other.y = sideStep.y;
+              other.targetDesc = `Yielded space for ${robot.id}`;
+            } else {
+              const didReroute = rerouteToAlternatePath(robot, other);
+              if (didReroute) return true;
+            }
+          }
+        }
+
+        // C. Check Head-On Encounter
         const dxToOther = other.x - robot.x;
         const dyToOther = other.y - robot.y;
         const targetDx = nextCell.x - robot.x;
@@ -1301,7 +1413,6 @@
         const otherTargetDy = otherNext ? otherNext.y - other.y : 0;
         const otherDot = (-dxToOther) * otherTargetDx + (-dyToOther) * otherTargetDy;
 
-        // Opposing traffic: both moving toward each other or facing in narrow column
         const isHeadOn = (dot > 0.05 && otherDot > 0.05 && distToOther < 2.5) ||
                          (SINGLE_LANE_COLUMNS.has(robot.gridX) && other.gridX === robot.gridX && distToOther < 3.0);
 
@@ -1309,81 +1420,43 @@
           const iHaveRightOfWay = (myScore > otherScore) || (myScore === otherScore && robot.id < other.id);
 
           if (!iHaveRightOfWay) {
-            // Lower priority robot MUST vacate the oncoming path!
-            // First attempt: Side-step into an open perpendicular adjacent cell
-            const isVerticalMove = Math.abs(nextCell.y - robot.gridY) > 0;
-            const side1 = isVerticalMove ? { x: robot.gridX - 1, y: robot.gridY } : { x: robot.gridX, y: robot.gridY - 1 };
-            const side2 = isVerticalMove ? { x: robot.gridX + 1, y: robot.gridY } : { x: robot.gridX, y: robot.gridY + 1 };
-
-            let sideStep = null;
-            if (isCellWalkable(side1.x, side1.y) && !AMR_FLEET.some(b => b.id !== robot.id && Math.hypot(b.x - side1.x, b.y - side1.y) < 1.05)) {
-              sideStep = side1;
-            } else if (isCellWalkable(side2.x, side2.y) && !AMR_FLEET.some(b => b.id !== robot.id && Math.hypot(b.x - side2.x, b.y - side2.y) < 1.05)) {
-              sideStep = side2;
-            }
-
-            if (sideStep && robot.state !== 'YIELDING_POCKET') {
-              robot.path = [sideStep, ...robot.path.slice(robot.pathIndex)];
-              robot.pathIndex = 0;
-              robot.state = 'YIELDING_POCKET';
-              robot.yieldTargetId = other.id;
-              robot.targetDesc = `Side-stepping to (${sideStep.x},${sideStep.y}) for ${other.id}`;
-              kpiYieldConflictsResolved++;
-              kpiCollisionsPrevented++;
-              updateHudStats();
-              return true; // ADVANCE INTO SIDE-STEP CELL!
-            }
-
-            // Second attempt: Narrow aisle / walled corridor - Reverse to exit pocket
-            if (robot.state !== 'YIELDING_POCKET') {
-              const isOtherNorth = other.gridY < robot.gridY;
-              const retreatY = isOtherNorth ? (robot.gridY <= 23 ? 24 : 46) : (robot.gridY <= 23 ? 4 : 25);
-              const retreatPath = findAStarPath(robot.gridX, robot.gridY, robot.gridX, retreatY, { ignoreDynamic: true });
-              if (retreatPath.length > 0) {
-                robot.path = retreatPath;
-                robot.pathIndex = 0;
-                robot.state = 'YIELDING_POCKET';
-                robot.yieldTargetId = other.id;
-                robot.targetDesc = `Yielding lane to ${other.id}`;
-                kpiYieldConflictsResolved++;
-                kpiCollisionsPrevented++;
-                updateHudStats();
-                return true; // ADVANCE ALONG RETREAT PATH!
-              }
-            }
-
+            // Lower priority robot MUST IMMEDIATELY MOVE TO A DIFFERENT PATH!
+            const didReroute = rerouteToAlternatePath(robot, other);
+            if (didReroute) return true; // Moving to different path!
             robot.targetDesc = `Yielding lane to ${other.id}`;
             return false;
           } else {
-            // Higher priority robot proceeds without interruption!
-            const isTargetBlockedByOther = Math.hypot(other.x - nextCell.x, other.y - nextCell.y) < 0.85;
-            if (isTargetBlockedByOther) {
-              robot.targetDesc = `Right-of-Way: Waiting for ${other.id} to side-step`;
+            // Higher priority robot continues unless other is physically blocking nextCell
+            const isTargetBlocked = Math.hypot(other.x - nextCell.x, other.y - nextCell.y) < 0.85;
+            if (isTargetBlocked) {
+              robot.holdDuration = (robot.holdDuration || 0) + dt;
+              if (robot.holdDuration > 0.35) {
+                const didReroute = rerouteToAlternatePath(robot, other);
+                if (didReroute) return true;
+              }
+              robot.targetDesc = `Right-of-Way: Waiting for ${other.id} to divert`;
               return false;
             }
             return true;
           }
         }
 
-        // 2. Target Cell Currently Occupied (Immediate Collision Prevention)
+        // D. Target Cell Currently Occupied (Immediate Collision Prevention)
         const isTargetOccupied = Math.hypot(other.x - nextCell.x, other.y - nextCell.y) < 0.92;
         if (isTargetOccupied) {
-          if (other.state === 'IDLE' && (!other.path || other.path.length === 0)) {
-            // Idle AMR steps aside into adjacent cell to grant right-of-way to active delivery AMR
-            const sideStep = findWalkableAdjacentCell(other.gridX, other.gridY, robot.gridX, robot.gridY);
-            if (sideStep && (sideStep.x !== other.gridX || sideStep.y !== other.gridY)) {
-              other.gridX = sideStep.x;
-              other.gridY = sideStep.y;
-              other.x = sideStep.x;
-              other.y = sideStep.y;
-              other.targetDesc = `Yielded space for ${robot.id}`;
-            }
+          // Immediately try to reroute to a clear parallel path!
+          const didReroute = rerouteToAlternatePath(robot, other);
+          if (didReroute) return true;
+
+          robot.holdDuration = (robot.holdDuration || 0) + dt;
+          if (robot.holdDuration > 0.35) {
+            unstickRobot(robot);
           }
           robot.targetDesc = `Hold: Waiting for ${other.id} to clear (${nextCell.x},${nextCell.y})`;
-          return false; // HOLD POSITION
+          return false;
         }
 
-        // 4. Converging / Intersection Conflict (Both robots targeting the SAME cell)
+        // E. Converging / Intersection Conflict (Both robots targeting the SAME cell)
         const isConverging = otherNext && (otherNext.x === nextCell.x && otherNext.y === nextCell.y);
         if (isConverging) {
           const distMe = Math.hypot(robot.x - nextCell.x, robot.y - nextCell.y);
@@ -1399,23 +1472,32 @@
           }
 
           if (!iWin) {
+            // Divert to a different path right now!
+            const didReroute = rerouteToAlternatePath(robot, other);
+            if (didReroute) return true;
+
             robot.targetDesc = `Intersection Yield: Waiting for ${other.id} to cross (${nextCell.x},${nextCell.y})`;
             kpiYieldConflictsResolved++;
             kpiCollisionsPrevented++;
             updateHudStats();
-            return false; // HOLD OUTSIDE INTERSECTION
+            return false;
           }
         }
 
-        // 5. Convoy Safe Following Distance (Trailing behind another robot moving in same direction)
-        if (distToOther < 1.35 && dot > 0.05) {
+        // F. Convoy Following / Highway Congestion (Trailing behind another robot)
+        if (distToOther < 1.6 && dot > 0.05) {
+          // If on a multi-lane highway or open corridor, switch to an open lane instead of queuing!
+          const isMultiLane = (robot.gridY >= 23 && robot.gridY <= 26) || (robot.gridY >= 1 && robot.gridY <= 4) || (robot.gridY >= 45 && robot.gridY <= 48) || (robot.gridX >= 25 && robot.gridX <= 29) || (robot.gridX >= 50 && robot.gridX <= 55);
+          if (isMultiLane) {
+            const didOvertake = rerouteToAlternatePath(robot, other);
+            if (didOvertake) return true;
+          }
           robot.targetDesc = `Convoy Buffer: Following ${other.id}`;
-          kpiCollisionsPrevented++;
-          updateHudStats();
-          return false; // HOLD POSITION to maintain convoy headway
+          return false;
         }
       }
 
+      robot.holdDuration = 0; // Clear hold timer when path is clear
       return true; // CLEAR TO ADVANCE
     }
 
@@ -1460,14 +1542,39 @@
         }
       }
 
-      robot.path = findAStarPath(robot.gridX, robot.gridY, gx, gy, { ignoreBotCost: false });
-      robot.pathIndex = 0;
+      // Avoid all other robots within 3 cells to guarantee a clear unblocked exit route
+      const avoidSet = new Set();
+      for (const b of AMR_FLEET) {
+        if (b.id !== robot.id && Math.hypot(b.x - robot.x, b.y - robot.y) < 3.2) {
+          avoidSet.add(`${b.gridX},${b.gridY}`);
+          avoidSet.add(`${Math.round(b.x)},${Math.round(b.y)}`);
+        }
+      }
+      avoidSet.delete(`${robot.gridX},${robot.gridY}`);
+      avoidSet.delete(`${gx},${gy}`);
+
+      const newPath = findAStarPath(robot.gridX, robot.gridY, gx, gy, { selfId: robot.id, avoidPositions: avoidSet });
+      if (newPath && newPath.length > 0) {
+        robot.path = newPath;
+        robot.pathIndex = 0;
+      } else {
+        robot.path = findAStarPath(robot.gridX, robot.gridY, gx, gy, { selfId: robot.id });
+        robot.pathIndex = 0;
+      }
     }
 
     function unstickRobot(robot) {
       if (!robot || robot.isPoweredOff) return;
-      resumeRobotTask(robot);
-      logTerminal('UNSTICK', 'tag-system', `⚡ <strong>${robot.id}</strong> auto-unblocked and route refreshed.`);
+      robot.holdDuration = 0;
+      robot.stuckDuration = 0;
+      robot.isYielding = false;
+      const otherNearby = AMR_FLEET.find(b => b.id !== robot.id && Math.hypot(b.x - robot.x, b.y - robot.y) < 2.5);
+      const didReroute = rerouteToAlternatePath(robot, otherNearby);
+      if (!didReroute) {
+        resumeRobotTask(robot);
+      }
+      logTerminal('UNSTICK', 'tag-system', `⚡ <strong>${robot.id}</strong> route cleared and alternate path engaged.`);
+      updateHudStats();
     }
 
     function unstickAllRobots() {
@@ -2012,28 +2119,27 @@
           robot.heading += diff * Math.min(1, dt * 14 * simSpeed);
         }
 
-        // IF TRAFFIC ARBITER BLOCKED ADVANCE, HOLD POSITION SAFELY!
-        if (!canAdvance) {
-          robot.stuckDuration = 0; // Reset watchdog: robot is intentionally waiting/yielding!
-          continue;
-        }
-
-        // Deadlock Watchdog: Detect robots that have clearance to move but make zero net progress for > 4.5s
+        // Continuous Deadlock Watchdog: Detect any robot with a mission making zero net progress for > 1.4s
         robot.progressCheckTimer = (robot.progressCheckTimer || 0) + dt;
-        if (robot.progressCheckTimer >= 1.0) {
+        if (robot.progressCheckTimer >= 0.3) {
           robot.progressCheckTimer = 0;
           const netDist = Math.hypot(robot.x - (robot.lastCheckX !== undefined ? robot.lastCheckX : robot.x), robot.y - (robot.lastCheckY !== undefined ? robot.lastCheckY : robot.y));
           robot.lastCheckX = robot.x;
           robot.lastCheckY = robot.y;
-          if (netDist < 0.2 && robot.path && robot.path.length > 0 && robot.state !== 'IDLE_CHARGING' && robot.state !== 'HUMAN_SAFETY_STOP') {
-            robot.stuckDuration = (robot.stuckDuration || 0) + 1.0;
-            if (robot.stuckDuration > 4.5) {
+          if (netDist < 0.12 && robot.path && robot.path.length > 0 && robot.state !== 'IDLE_CHARGING' && robot.state !== 'HUMAN_SAFETY_STOP' && robot.state !== 'LIFTING_CARGO' && robot.state !== 'DEPOSITING_CARGO') {
+            robot.stuckDuration = (robot.stuckDuration || 0) + 0.3;
+            if (robot.stuckDuration >= 1.4) {
               unstickRobot(robot);
               robot.stuckDuration = 0;
             }
           } else {
-            robot.stuckDuration = 0;
+            robot.stuckDuration = Math.max(0, (robot.stuckDuration || 0) - 0.15);
           }
+        }
+
+        // IF TRAFFIC ARBITER BLOCKED ADVANCE, HOLD POSITION TEMPORARILY!
+        if (!canAdvance) {
+          continue;
         }
 
         const step = speed * dt;
